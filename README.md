@@ -1,22 +1,23 @@
 # Blackjack Card Scanner and Counter
 
-A Linux application that performs real-time screen analysis to detect playing cards and calculate the true count for blackjack games using the Hi-Lo counting system.
+A Linux application that performs real-time screen analysis to detect playing cards and calculate optimal bet sizing for blackjack games using full deck composition tracking.
 
 ## Overview
 
-This software monitors your screen in real-time, detects blackjack cards being played, and provides live card counting metrics including:
-- **True Count**: The main advantage indicator
-- **Running Count**: Raw count of cards seen
-- **Decks Remaining**: Estimated cards left in the shoe
-- **Betting Recommendations**: Strategic advice based on the count
+This software monitors your screen in real-time, detects blackjack cards being played, and provides precise card counting metrics including:
+- **Optimal Bet Size**: Exact bet amount in units using Kelly Criterion
+- **Player Advantage**: Calculated edge based on exact deck composition
+- **Full Composition Tracking**: Monitors every single card remaining in the shoe
+- **Shoe Penetration**: Percentage of cards dealt from the shoe
 
 ## Features
 
 - 🎴 Real-time card detection using computer vision (OpenCV)
-- 🧮 Hi-Lo card counting system implementation
-- 📊 Live true count calculation
+- 🧮 Full deck composition tracking (not simplified counting systems)
+- 📊 Exact player advantage calculation using Effect of Removal (EOR)
+- 💰 Kelly Criterion optimal bet sizing in units
 - 🖥️ Always-on-top GUI display
-- 🎯 Betting strategy recommendations
+- 📈 Key card composition display (5s, 6s, 10s, Aces)
 - 🔄 Easy reset between shoes
 - ⚡ Low CPU usage and efficient screen capture
 
@@ -55,19 +56,39 @@ python3 blackjack_counter.py
 
 ## How It Works
 
-### Hi-Lo Counting System
+### Full Deck Composition Tracking
 
-The application implements the proven Hi-Lo card counting method:
+Unlike simplified counting systems (Hi-Lo, KO, etc.), this application tracks the **exact composition** of every card remaining in the shoe:
 
-| Card | Value |
-|------|-------|
-| 2-6 | +1 |
-| 7-9 | 0 |
-| 10-A | -1 |
+- Maintains count of all 13 ranks (2-A) across all decks
+- Calculates player advantage using Effect of Removal (EOR) values
+- Each card rank has a specific impact on player edge
+- More accurate than traditional counting systems
 
-**True Count** = Running Count ÷ Decks Remaining
+### Effect of Removal (EOR)
 
-A positive true count indicates player advantage, while negative indicates dealer advantage.
+The system uses EOR values to determine how each card affects player advantage:
+
+| Card | EOR Impact |
+|------|------------|
+| 5 | +0.67% (most beneficial to remove) |
+| 4 | +0.52% |
+| 6 | +0.45% |
+| 2, 3 | +0.40-0.43% |
+| 7 | +0.30% |
+| 8 | ±0.01% (neutral) |
+| 9 | -0.19% |
+| 10, J, Q, K | -0.51% (hurts when removed) |
+| A | -0.59% (most harmful to remove) |
+
+### Kelly Criterion Bet Sizing
+
+Optimal bet = (Player Edge / Variance) × Bankroll
+
+- Uses 1/4 Kelly for conservative risk management
+- Automatically calculates bet size in units
+- Considers current advantage and bankroll
+- Maximum bet capped at 10% of total bankroll
 
 ### Technology Stack
 
@@ -92,21 +113,24 @@ A positive true count indicates player advantage, while negative indicates deale
 This is a functional implementation with the following capabilities:
 
 ✅ Screen capture and monitoring
-✅ Card counting logic (Hi-Lo system)
-✅ True count calculation
-✅ GUI with live updates
-✅ Betting recommendations
+✅ Full deck composition tracking (all 13 ranks)
+✅ Exact player advantage calculation using EOR
+✅ Kelly Criterion optimal bet sizing
+✅ GUI with live updates showing bet in units
+✅ Key card composition display
 
 ⚠️ **Note**: Card detection accuracy depends on screen quality, card visibility, and casino interface. The current implementation uses contour detection - for production use, consider implementing template matching or machine learning models for your specific casino.
 
 ## Contributing
 
 Contributions are welcome! Areas for improvement:
-- Enhanced card detection with ML models
+- Enhanced card detection with ML models or OCR
 - Template matching for specific online casinos
 - Multi-monitor support configuration
 - Region selection for targeted scanning
-- Additional counting systems (KO, Omega II, etc.)
+- Adjustable Kelly fraction and risk parameters
+- Export statistics and session tracking
+- Support for different rule variations (S17, H17, DAS, etc.)
 
 ## License
 

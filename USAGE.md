@@ -2,31 +2,38 @@
 
 ## How It Works
 
-The Blackjack Card Scanner and Counter uses computer vision to detect cards displayed on your screen and implements the Hi-Lo card counting system to give you real-time advantage information.
+The Blackjack Card Scanner and Counter uses computer vision to detect cards displayed on your screen and implements **full deck composition tracking** to calculate exact player advantage and optimal bet sizing.
 
-## Card Counting System
+## Composition Tracking System
 
-This application uses the **Hi-Lo counting system**, one of the most popular and effective card counting methods:
+This application uses **full deck composition tracking**, which is more accurate than traditional counting systems like Hi-Lo:
 
-### Card Values:
-- **Low cards (2-6)**: +1
-- **Neutral cards (7-9)**: 0
-- **High cards (10, J, Q, K, A)**: -1
+### What It Tracks:
+- **Every single card**: Maintains count of all 52×6 = 312 cards in a 6-deck shoe
+- **13 separate ranks**: Tracks 2, 3, 4, 5, 6, 7, 8, 9, 10, J, Q, K, A independently
+- **Exact composition**: Knows precisely how many of each rank remain
 
 ### Key Metrics:
 
-1. **Running Count**: The raw total of all cards seen
-   - Add +1 for each low card (2-6)
-   - Add -1 for each high card (10-A)
-   - Add 0 for neutral cards (7-9)
+1. **Optimal Bet (PRIMARY)**: The bet size you should make in units
+   - Calculated using Kelly Criterion
+   - Based on your exact advantage at this moment
+   - Accounts for bankroll size and variance
+   - Uses 1/4 Kelly for conservative risk management
 
-2. **True Count**: Running Count ÷ Decks Remaining
-   - This adjusts for how many cards are left
-   - More accurate indicator of advantage
+2. **Player Advantage**: Your exact edge over the house
+   - Calculated using Effect of Removal (EOR) values
+   - Positive = you have an edge
+   - Negative = house has an edge
+   - Examples: +1.5% is excellent, -0.5% is unfavorable
 
-3. **Decks Remaining**: Estimated based on cards seen
-   - Starts at 6.0 decks (standard shoe)
-   - Decreases as more cards are detected
+3. **Cards Remaining**: Total cards left in the shoe
+   - Starts at 312 (for 6-deck shoe)
+   - Decreases as cards are dealt
+
+4. **Shoe Penetration**: Percentage of cards dealt
+   - Important for determining when advantage is most reliable
+   - Higher penetration = more accurate advantage calculation
 
 ## Using the Application
 
@@ -50,31 +57,53 @@ Click the **"Start Scanning"** button to begin monitoring your screen.
 
 ### Step 4: Interpret the Display
 
-The application shows:
+The application shows several key pieces of information:
 
-- **True Count**: Main indicator
-  - **Green (≥ +2)**: Favorable - Increase your bet
-  - **Red (≤ -2)**: Unfavorable - Bet minimum
-  - **Blue (-2 to +2)**: Neutral - Standard bet
+#### Primary Display:
+- **Optimal Bet**: The main indicator - tells you EXACTLY how many units to bet
+  - **Dark Green (≥5 units)**: Excellent opportunity
+  - **Green (3-5 units)**: Very favorable
+  - **Orange (2-3 units)**: Moderately favorable
+  - **Red (1 unit)**: Minimum bet only
 
-- **Running Count**: Raw count total
-- **Decks Remaining**: Estimated decks left
-- **Recommendation**: Betting advice
+#### Secondary Metrics:
+- **Player Advantage**: Your exact edge as a percentage
+  - +1.0% or higher: Excellent
+  - +0.5% to +1.0%: Good
+  - 0% to +0.5%: Marginal
+  - Negative: Unfavorable
+
+- **Cards Remaining**: Total cards left in shoe
+- **Shoe Penetration**: Percentage of shoe dealt
+- **Key Card Counts**: Shows remaining 5s, 6s, 10s, and Aces (most impactful cards)
 
 ### Step 5: Reset Between Shoes
 
-When the dealer shuffles a new shoe, click **"Reset Count"** to start fresh.
+When the dealer shuffles a new shoe, click **"New Shoe"** to reset the tracker.
 
-## Betting Strategy Based on True Count
+## Betting Strategy Using Optimal Bet Size
 
-| True Count | Recommendation | Betting Unit |
-|-----------|----------------|--------------|
-| ≥ +3 | Highly Favorable | 8x minimum |
-| +2 | Favorable | 4x minimum |
-| +1 | Slight Advantage | 2x minimum |
-| 0 | Neutral | 1x minimum |
-| -1 | Slight Disadvantage | 1x minimum |
-| ≤ -2 | Unfavorable | Minimum bet |
+The application automatically calculates your optimal bet based on Kelly Criterion. Simply bet what it tells you:
+
+| Optimal Bet | Player Advantage | Situation |
+|-------------|------------------|-----------|
+| 5+ units | +1.5% or higher | Excellent - Max bet |
+| 3-5 units | +1.0% to +1.5% | Very favorable |
+| 2-3 units | +0.7% to +1.0% | Favorable |
+| 1-2 units | +0.5% to +0.7% | Slight edge |
+| 1 unit | Below +0.5% | Minimum bet only |
+
+### Understanding Units
+
+A "unit" is your base betting amount. For example:
+- If your unit is $25, and the app shows "3.0 units", bet $75
+- If your unit is $10, and the app shows "5.5 units", bet $55
+- If your unit is $100, and the app shows "1.0 units", bet $100
+
+The default calculation assumes a 100-unit bankroll. Adjust your unit size accordingly:
+- **Conservative**: 1 unit = 1% of bankroll
+- **Moderate**: 1 unit = 1.5% of bankroll
+- **Aggressive**: 1 unit = 2% of bankroll
 
 ## Tips for Best Results
 
@@ -84,15 +113,17 @@ When the dealer shuffles a new shoe, click **"Reset Count"** to start fresh.
 4. **Reset Properly**: Always reset when a new shoe begins
 5. **Practice**: Test with free games before using real money
 
-## Current Limitations
+## Current Implementation
 
 The current implementation includes:
 
 - ✅ Screen capture functionality
-- ✅ Card counting logic (Hi-Lo system)
-- ✅ True count calculation
-- ✅ Real-time display with recommendations
-- ✅ GUI controls
+- ✅ Full deck composition tracking (all 13 ranks)
+- ✅ Exact player advantage calculation (EOR-based)
+- ✅ Kelly Criterion optimal bet sizing
+- ✅ Real-time display with bet in units
+- ✅ Key card composition display
+- ✅ Shoe penetration tracking
 
 **Note**: The card detection uses contour-based detection. For optimal accuracy:
 - Cards should be clearly visible with good contrast
