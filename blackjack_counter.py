@@ -633,7 +633,7 @@ class BlackjackCounterGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Blackjack Composition Tracker")
-        self.root.geometry("550x680")
+        self.root.geometry("600x850")
         self.root.attributes('-topmost', True)  # Keep on top
 
         # Create display elements
@@ -754,7 +754,8 @@ class BlackjackCounterGUI:
         comp_frame.pack(pady=10, padx=20, fill=tk.X)
 
         self.composition_labels = {}
-        key_ranks = ['5', '6', '10', 'A']  # Most impactful cards
+        # Note: 10 represents all 10-value cards (10, J, Q, K)
+        key_ranks = ['5', '6', '10-val', 'A']  # Most impactful cards
 
         comp_grid = tk.Frame(comp_frame)
         comp_grid.pack(pady=5)
@@ -763,10 +764,67 @@ class BlackjackCounterGUI:
             frame = tk.Frame(comp_grid)
             frame.grid(row=0, column=i, padx=10)
 
-            tk.Label(frame, text=f"{rank}:", font=("Arial", 10, "bold")).pack()
-            label = tk.Label(frame, text="32", font=("Arial", 11))
+            display_name = rank if rank != '10-val' else '10/J/Q/K'
+            tk.Label(frame, text=f"{display_name}:", font=("Arial", 10, "bold")).pack()
+            initial_val = "128" if rank == '10-val' else "32"
+            label = tk.Label(frame, text=initial_val, font=("Arial", 11))
             label.pack()
             self.composition_labels[rank] = label
+
+        # Manual Card Entry Section
+        card_entry_frame = tk.LabelFrame(self.root, text="Card Tracker (for Infinite Blackjack)", font=("Arial", 11, "bold"))
+        card_entry_frame.pack(pady=10, padx=20, fill=tk.X)
+
+        # Instructions
+        tk.Label(
+            card_entry_frame,
+            text="Click cards as you see them dealt (any player, dealer, etc.)",
+            font=("Arial", 9, "italic"),
+            fg="gray"
+        ).pack(pady=3)
+
+        # Quick add buttons for all ranks
+        button_frame = tk.Frame(card_entry_frame)
+        button_frame.pack(pady=8)
+
+        self.card_buttons = {}
+        all_ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
+
+        for i, rank in enumerate(all_ranks):
+            btn = tk.Button(
+                button_frame,
+                text=rank,
+                command=lambda r=rank: self.add_card_manual(r),
+                font=("Arial", 10, "bold"),
+                width=4,
+                height=1
+            )
+            btn.grid(row=0, column=i, padx=2, pady=2)
+            self.card_buttons[rank] = btn
+
+        # Text entry for multiple cards
+        multi_entry_frame = tk.Frame(card_entry_frame)
+        multi_entry_frame.pack(pady=5)
+
+        tk.Label(multi_entry_frame, text="Or enter multiple:", font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
+        self.multi_card_entry = tk.Entry(multi_entry_frame, width=20, font=("Arial", 10))
+        self.multi_card_entry.pack(side=tk.LEFT, padx=5)
+
+        tk.Button(
+            multi_entry_frame,
+            text="Add Cards",
+            command=self.add_multiple_cards,
+            font=("Arial", 9),
+            bg="#2196F3",
+            fg="white"
+        ).pack(side=tk.LEFT, padx=5)
+
+        tk.Label(
+            card_entry_frame,
+            text="Format: 10,K,5,A or 10 K 5 A",
+            font=("Arial", 8, "italic"),
+            fg="gray"
+        ).pack(pady=2)
 
         # Strategy Advisor Section
         strategy_frame = tk.LabelFrame(self.root, text="Strategy Advisor", font=("Arial", 11, "bold"))
@@ -932,7 +990,14 @@ class BlackjackCounterGUI:
 
         # Update key card composition
         for rank, label in self.composition_labels.items():
-            count = self.composition_tracker.remaining[rank]
+            if rank == '10-val':
+                # Combine all 10-value cards (10, J, Q, K)
+                count = (self.composition_tracker.remaining['10'] +
+                        self.composition_tracker.remaining['J'] +
+                        self.composition_tracker.remaining['Q'] +
+                        self.composition_tracker.remaining['K'])
+            else:
+                count = self.composition_tracker.remaining[rank]
             label.config(text=str(count))
 
         # Update status
@@ -1002,6 +1067,45 @@ class BlackjackCounterGUI:
         except Exception as e:
             self.action_label.config(text="ERROR", fg="red")
             self.action_reason_label.config(text=str(e))
+
+    def add_card_manual(self, rank):
+        """Add a single card to the composition tracker"""
+        success = self.composition_tracker.add_card(rank)
+        if success:
+            # Visual feedback - briefly highlight the button
+            self.card_buttons[rank].config(bg="#4CAF50")
+            self.root.after(200, lambda: self.card_buttons[rank].config(bg="SystemButtonFace"))
+            # Update the display
+            self.update_display()
+        else:
+            # Card not available (shouldn't happen in normal use)
+            self.card_buttons[rank].config(bg="#F44336")
+            self.root.after(200, lambda: self.card_buttons[rank].config(bg="SystemButtonFace"))
+
+    def add_multiple_cards(self):
+        """Add multiple cards from text entry"""
+        cards_str = self.multi_card_entry.get().strip().upper()
+        if not cards_str:
+            return
+
+        # Parse cards - support both comma and space separation
+        cards_str = cards_str.replace(',', ' ')
+        cards = [c.strip() for c in cards_str.split() if c.strip()]
+
+        valid_ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+        added_count = 0
+
+        for card in cards:
+            if card in valid_ranks:
+                if self.composition_tracker.add_card(card):
+                    added_count += 1
+
+        if added_count > 0:
+            self.update_display()
+            self.multi_card_entry.delete(0, tk.END)
+            # Show feedback
+            self.multi_card_entry.config(bg="#4CAF50")
+            self.root.after(500, lambda: self.multi_card_entry.config(bg="white"))
 
     def scan_loop(self):
         """Main scanning loop running in separate thread"""
