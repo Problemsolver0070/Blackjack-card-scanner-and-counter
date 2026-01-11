@@ -9,7 +9,7 @@ The Blackjack Card Scanner and Counter uses computer vision to detect cards disp
 This application uses **full deck composition tracking**, which is more accurate than traditional counting systems like Hi-Lo:
 
 ### What It Tracks:
-- **Every single card**: Maintains count of all 52×6 = 312 cards in a 6-deck shoe
+- **Every single card**: Maintains count of all 52×8 = 416 cards in an 8-deck shoe
 - **13 separate ranks**: Tracks 2, 3, 4, 5, 6, 7, 8, 9, 10, J, Q, K, A independently
 - **Exact composition**: Knows precisely how many of each rank remain
 
@@ -28,12 +28,13 @@ This application uses **full deck composition tracking**, which is more accurate
    - Examples: +1.5% is excellent, -0.5% is unfavorable
 
 3. **Cards Remaining**: Total cards left in the shoe
-   - Starts at 312 (for 6-deck shoe)
+   - Starts at 416 (for 8-deck shoe)
    - Decreases as cards are dealt
 
 4. **Shoe Penetration**: Percentage of cards dealt
    - Important for determining when advantage is most reliable
    - Higher penetration = more accurate advantage calculation
+   - Typical online casinos use ~50% penetration (208 cards dealt)
 
 ## Using the Application
 
@@ -112,6 +113,7 @@ The default calculation assumes a 100-unit bankroll. Adjust your unit size accor
 3. **Manual Verification**: Double-check the count occasionally
 4. **Reset Properly**: Always reset when a new shoe begins
 5. **Practice**: Test with free games before using real money
+6. **Penetration Matters**: With 8-deck shoes, advantage calculations become more reliable after ~25% penetration (100+ cards dealt). The sweet spot is 30-50% penetration where you have enough information but the shoe hasn't been shuffled yet.
 
 ## Current Implementation
 
