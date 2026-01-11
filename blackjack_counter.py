@@ -226,6 +226,121 @@ class CompositionTracker:
         dealt = self.get_cards_dealt()
         return (dealt / total_cards) * 100 if total_cards > 0 else 0
 
+    def calculate_dealer_bust_probability(self):
+        """
+        Calculate dealer bust probability based on current deck composition
+
+        Returns weighted average dealer bust probability across all possible dealer upcards
+        Higher values = more likely dealer busts = better for player
+        """
+        total_remaining = self.get_total_remaining()
+
+        if total_remaining == 0:
+            return 0.0
+
+        # Base dealer bust probabilities for each upcard (with S17 rules, neutral deck)
+        # These are the probabilities when dealer must hit to 17
+        base_bust_rates = {
+            '2': 35.30,   # Dealer shows 2
+            '3': 37.56,   # Dealer shows 3
+            '4': 40.28,   # Dealer shows 4
+            '5': 42.89,   # Dealer shows 5
+            '6': 42.08,   # Dealer shows 6
+            '7': 25.99,   # Dealer shows 7
+            '8': 23.86,   # Dealer shows 8
+            '9': 23.34,   # Dealer shows 9
+            '10': 21.43,  # Dealer shows 10
+            'J': 21.43,   # Dealer shows J
+            'Q': 21.43,   # Dealer shows Q
+            'K': 21.43,   # Dealer shows K
+            'A': 11.65,   # Dealer shows A
+        }
+
+        # Calculate how composition affects bust probability
+        # More high cards (10s) remaining = higher dealer bust probability
+        # More low cards remaining = lower dealer bust probability
+
+        # Get percentage of 10-value cards in remaining deck
+        ten_value_cards = (self.remaining['10'] + self.remaining['J'] +
+                          self.remaining['Q'] + self.remaining['K'])
+        ten_percentage = (ten_value_cards / total_remaining) if total_remaining > 0 else 0
+
+        # Normal 10-value percentage is 4/13 ≈ 30.77%
+        normal_ten_percentage = 4.0 / 13.0
+        ten_richness = ten_percentage / normal_ten_percentage  # >1 = rich in tens, <1 = poor in tens
+
+        # Get percentage of low cards (2-6) in remaining deck
+        low_cards = sum(self.remaining[rank] for rank in ['2', '3', '4', '5', '6'])
+        low_percentage = (low_cards / total_remaining) if total_remaining > 0 else 0
+
+        # Normal low card percentage is 5/13 ≈ 38.46%
+        normal_low_percentage = 5.0 / 13.0
+        low_richness = low_percentage / normal_low_percentage  # >1 = rich in lows, <1 = poor in lows
+
+        # Adjustment factor: more 10s = higher bust rate, more low cards = lower bust rate
+        # Each 10% increase in ten-richness adds ~3% to bust probability
+        # Each 10% increase in low-richness subtracts ~2% from bust probability
+        adjustment = ((ten_richness - 1.0) * 15.0) - ((low_richness - 1.0) * 10.0)
+
+        # Calculate weighted average bust probability across all possible dealer upcards
+        weighted_bust_prob = 0.0
+        total_weight = 0.0
+
+        for rank in self.ranks:
+            if self.remaining[rank] > 0:
+                # Weight by probability of this card being dealer upcard
+                weight = self.remaining[rank] / total_remaining
+                # Adjust base bust rate by composition
+                adjusted_bust_rate = base_bust_rates[rank] + adjustment
+                # Clamp between 5% and 60%
+                adjusted_bust_rate = max(5.0, min(60.0, adjusted_bust_rate))
+
+                weighted_bust_prob += adjusted_bust_rate * weight
+                total_weight += weight
+
+        if total_weight > 0:
+            return weighted_bust_prob / total_weight
+
+        return 28.0  # Default average dealer bust rate
+
+    def get_dealer_bust_for_upcard(self, upcard):
+        """
+        Get dealer bust probability for a specific dealer upcard
+
+        Args:
+            upcard: Dealer's upcard rank ('2'-'9', '10', 'J', 'Q', 'K', 'A')
+
+        Returns: Bust probability percentage for that specific upcard
+        """
+        total_remaining = self.get_total_remaining()
+
+        if total_remaining == 0 or upcard not in self.ranks:
+            return 0.0
+
+        # Base bust rates
+        base_bust_rates = {
+            '2': 35.30, '3': 37.56, '4': 40.28, '5': 42.89, '6': 42.08,
+            '7': 25.99, '8': 23.86, '9': 23.34,
+            '10': 21.43, 'J': 21.43, 'Q': 21.43, 'K': 21.43, 'A': 11.65,
+        }
+
+        # Calculate composition adjustment
+        ten_value_cards = (self.remaining['10'] + self.remaining['J'] +
+                          self.remaining['Q'] + self.remaining['K'])
+        ten_percentage = (ten_value_cards / total_remaining) if total_remaining > 0 else 0
+        normal_ten_percentage = 4.0 / 13.0
+        ten_richness = ten_percentage / normal_ten_percentage
+
+        low_cards = sum(self.remaining[rank] for rank in ['2', '3', '4', '5', '6'])
+        low_percentage = (low_cards / total_remaining) if total_remaining > 0 else 0
+        normal_low_percentage = 5.0 / 13.0
+        low_richness = low_percentage / normal_low_percentage
+
+        adjustment = ((ten_richness - 1.0) * 15.0) - ((low_richness - 1.0) * 10.0)
+
+        adjusted_bust_rate = base_bust_rates[upcard] + adjustment
+        return max(5.0, min(60.0, adjusted_bust_rate))
+
 
 class ScreenCapture:
     """Handles screen capture for card detection"""
@@ -263,7 +378,7 @@ class BlackjackCounterGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Blackjack Composition Tracker")
-        self.root.geometry("500x450")
+        self.root.geometry("500x500")
         self.root.attributes('-topmost', True)  # Keep on top
 
         # Create display elements
@@ -325,6 +440,24 @@ class BlackjackCounterGUI:
             fg="gray"
         )
         self.advantage_label.pack(side=tk.LEFT, padx=10)
+
+        # Dealer Bust Probability Display
+        bust_frame = tk.Frame(self.root)
+        bust_frame.pack(pady=10)
+
+        tk.Label(
+            bust_frame,
+            text="Dealer Bust Chance:",
+            font=("Arial", 12)
+        ).pack(side=tk.LEFT)
+
+        self.bust_label = tk.Label(
+            bust_frame,
+            text="28.0%",
+            font=("Arial", 16, "bold"),
+            fg="gray"
+        )
+        self.bust_label.pack(side=tk.LEFT, padx=10)
 
         # Cards Remaining Display
         cards_frame = tk.Frame(self.root)
@@ -465,6 +598,20 @@ class BlackjackCounterGUI:
             self.advantage_label.config(fg="orange")
         else:
             self.advantage_label.config(fg="red")
+
+        # Update dealer bust probability
+        dealer_bust = self.composition_tracker.calculate_dealer_bust_probability()
+        self.bust_label.config(text=f"{dealer_bust:.1f}%")
+
+        # Color code: higher bust probability = better for player
+        if dealer_bust >= 32.0:
+            self.bust_label.config(fg="darkgreen")  # High bust chance - very good
+        elif dealer_bust >= 29.0:
+            self.bust_label.config(fg="green")  # Above average - good
+        elif dealer_bust >= 26.0:
+            self.bust_label.config(fg="orange")  # Slightly below average
+        else:
+            self.bust_label.config(fg="red")  # Low bust chance - bad for player
 
         # Update card counts
         self.cards_remaining_label.config(text=str(cards_remaining))

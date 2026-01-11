@@ -7,6 +7,7 @@ A Linux application that performs real-time screen analysis to detect playing ca
 This software monitors your screen in real-time, detects blackjack cards being played, and provides precise card counting metrics including:
 - **Optimal Bet Size**: Exact bet amount in units using Kelly Criterion
 - **Player Advantage**: Calculated edge based on exact deck composition
+- **Dealer Bust Probability**: Real-time chance of dealer busting based on composition
 - **Full Composition Tracking**: Monitors every single card remaining in the shoe
 - **Shoe Penetration**: Percentage of cards dealt from the shoe
 
@@ -16,6 +17,7 @@ This software monitors your screen in real-time, detects blackjack cards being p
 - 🧮 Full deck composition tracking (not simplified counting systems)
 - 📊 Exact player advantage calculation using Effect of Removal (EOR)
 - 💰 Kelly Criterion optimal bet sizing in units
+- 🎯 Dealer bust probability based on current composition
 - 🖥️ Always-on-top GUI display
 - 📈 Key card composition display (5s, 6s, 10s, Aces)
 - 🎲 Optimized for 8-deck shoes with ~50% penetration
@@ -93,6 +95,25 @@ Optimal bet = (Player Edge / Variance) × Bankroll
 - Considers current advantage and bankroll
 - Maximum bet capped at 10% of total bankroll
 
+### Dealer Bust Probability
+
+The system calculates the real-time probability of the dealer busting based on current deck composition:
+
+**How it works**:
+- Starts with base bust probabilities for each possible dealer upcard
+- Adjusts based on remaining high cards (10s, face cards) and low cards (2-6)
+- More 10-value cards remaining = higher dealer bust probability (good for player)
+- More low cards remaining = lower dealer bust probability (bad for player)
+
+**Base dealer bust rates** (neutral deck, S17 rules):
+- Dealer showing 5 or 6: ~42% (worst for dealer)
+- Dealer showing 2-4: ~35-40%
+- Dealer showing 7-9: ~23-26%
+- Dealer showing 10: ~21%
+- Dealer showing Ace: ~12%
+
+The displayed bust probability is a weighted average across all possible dealer upcards, adjusted for the current composition. When the deck is rich in 10s, this percentage increases significantly.
+
 ### Technology Stack
 
 - **OpenCV**: Computer vision for card detection
@@ -119,6 +140,7 @@ This is a functional implementation with the following capabilities:
 ✅ Full deck composition tracking (all 13 ranks)
 ✅ Exact player advantage calculation using EOR
 ✅ Kelly Criterion optimal bet sizing
+✅ Dealer bust probability (composition-adjusted)
 ✅ GUI with live updates showing bet in units
 ✅ Key card composition display
 
