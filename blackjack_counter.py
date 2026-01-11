@@ -93,7 +93,7 @@ class CompositionTracker:
     Tracks every card remaining in the shoe and calculates exact advantage
     """
 
-    def __init__(self, num_decks=6):
+    def __init__(self, num_decks=8):
         self.num_decks = num_decks
         self.ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
 
@@ -272,7 +272,7 @@ class BlackjackCounterGUI:
         # Initialize components
         self.screen_capture = ScreenCapture()
         self.card_detector = CardDetector()
-        self.composition_tracker = CompositionTracker(num_decks=6)
+        self.composition_tracker = CompositionTracker(num_decks=8)
 
         # Control flags
         self.is_running = False
@@ -338,7 +338,7 @@ class BlackjackCounterGUI:
 
         self.cards_remaining_label = tk.Label(
             cards_frame,
-            text="312",
+            text="416",
             font=("Arial", 12)
         )
         self.cards_remaining_label.pack(side=tk.LEFT, padx=10)
@@ -375,7 +375,7 @@ class BlackjackCounterGUI:
             frame.grid(row=0, column=i, padx=10)
 
             tk.Label(frame, text=f"{rank}:", font=("Arial", 10, "bold")).pack()
-            label = tk.Label(frame, text="24", font=("Arial", 11))
+            label = tk.Label(frame, text="32", font=("Arial", 11))
             label.pack()
             self.composition_labels[rank] = label
 

@@ -18,6 +18,7 @@ This software monitors your screen in real-time, detects blackjack cards being p
 - 💰 Kelly Criterion optimal bet sizing in units
 - 🖥️ Always-on-top GUI display
 - 📈 Key card composition display (5s, 6s, 10s, Aces)
+- 🎲 Optimized for 8-deck shoes with ~50% penetration
 - 🔄 Easy reset between shoes
 - ⚡ Low CPU usage and efficient screen capture
 
@@ -38,10 +39,10 @@ chmod +x setup.sh
 python3 blackjack_counter.py
 ```
 
-1. Open your online blackjack game
+1. Open your online blackjack game (optimized for 8-deck shoes)
 2. Click "Start Scanning" in the counter window
 3. Play as normal - the count updates automatically
-4. Click "Reset Count" when a new shoe begins
+4. Click "New Shoe" when a new shoe begins
 
 ## System Requirements
 
@@ -64,6 +65,8 @@ Unlike simplified counting systems (Hi-Lo, KO, etc.), this application tracks th
 - Calculates player advantage using Effect of Removal (EOR) values
 - Each card rank has a specific impact on player edge
 - More accurate than traditional counting systems
+
+**Configuration**: Optimized for 8-deck shoes (416 cards total), the standard for most online casinos. Online casinos typically use ~50% penetration (208 cards dealt before shuffle), which provides sufficient data for accurate advantage calculation while limiting counter effectiveness.
 
 ### Effect of Removal (EOR)
 
