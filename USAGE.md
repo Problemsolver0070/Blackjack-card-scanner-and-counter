@@ -27,11 +27,18 @@ This application uses **full deck composition tracking**, which is more accurate
    - Negative = house has an edge
    - Examples: +1.5% is excellent, -0.5% is unfavorable
 
-3. **Cards Remaining**: Total cards left in the shoe
+3. **Dealer Bust Chance**: Probability of dealer busting
+   - Calculated from current deck composition
+   - Higher values are better for player
+   - Average is ~28% in neutral deck
+   - 32%+ = excellent (deck rich in 10s)
+   - 26% or below = unfavorable (deck rich in low cards)
+
+4. **Cards Remaining**: Total cards left in the shoe
    - Starts at 416 (for 8-deck shoe)
    - Decreases as cards are dealt
 
-4. **Shoe Penetration**: Percentage of cards dealt
+5. **Shoe Penetration**: Percentage of cards dealt
    - Important for determining when advantage is most reliable
    - Higher penetration = more accurate advantage calculation
    - Typical online casinos use ~50% penetration (208 cards dealt)
@@ -73,6 +80,12 @@ The application shows several key pieces of information:
   - +0.5% to +1.0%: Good
   - 0% to +0.5%: Marginal
   - Negative: Unfavorable
+
+- **Dealer Bust Chance**: Probability dealer busts (higher is better)
+  - 32%+ (Dark Green): Excellent - deck rich in 10s
+  - 29-32% (Green): Above average
+  - 26-29% (Orange): Slightly below average
+  - <26% (Red): Poor - deck rich in low cards
 
 - **Cards Remaining**: Total cards left in shoe
 - **Shoe Penetration**: Percentage of shoe dealt
@@ -123,6 +136,7 @@ The current implementation includes:
 - ✅ Full deck composition tracking (all 13 ranks)
 - ✅ Exact player advantage calculation (EOR-based)
 - ✅ Kelly Criterion optimal bet sizing
+- ✅ Dealer bust probability (composition-adjusted)
 - ✅ Real-time display with bet in units
 - ✅ Key card composition display
 - ✅ Shoe penetration tracking
