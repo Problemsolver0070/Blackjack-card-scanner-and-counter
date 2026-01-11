@@ -91,9 +91,66 @@ The application shows several key pieces of information:
 - **Shoe Penetration**: Percentage of shoe dealt
 - **Key Card Counts**: Shows remaining 5s, 6s, 10s, and Aces (most impactful cards)
 
+#### Strategy Advisor:
+- **Your Hand**: Enter your cards (e.g., "10,6" or "A,7")
+- **Dealer**: Enter dealer's upcard
+- **Recommended Action**: Shows HIT/STAND/DOUBLE/SPLIT/SURRENDER
+  - 🟠 **Orange** (HIT): Take another card
+  - 🔵 **Blue** (STAND): Keep current hand
+  - 🟢 **Green** (DOUBLE): Double down
+  - 🟣 **Purple** (SPLIT): Split the pair
+  - 🔴 **Red** (SURRENDER): Give up half your bet
+  - 🟠 **Deep Orange**: Composition deviation from basic strategy
+
 ### Step 5: Reset Between Shoes
 
 When the dealer shuffles a new shoe, click **"New Shoe"** to reset the tracker.
+
+## Using the Strategy Advisor
+
+The Strategy Advisor tells you the mathematically optimal play for every hand:
+
+### How to Use:
+
+1. **Enter Your Hand**: Type your cards separated by comma
+   - Example: `10,6` (hard 16)
+   - Example: `A,7` (soft 18)
+   - Example: `8,8` (pair of 8s)
+
+2. **Enter Dealer Upcard**: Type dealer's visible card
+   - Example: `10` or `K` (both represent 10-value)
+   - Example: `A` (ace)
+
+3. **Click "Get Action"**: The optimal play will be displayed
+
+### Understanding the Output:
+
+**Actions**:
+- **HIT**: Take another card
+- **STAND**: Keep your current total
+- **DOUBLE**: Double your bet and take exactly one more card
+- **SPLIT**: Split pairs into two separate hands
+- **SURRENDER**: Give up and lose half your bet (sometimes best option)
+
+**Composition Deviations**:
+When you see a **deep orange** action with a message like "High count (+1.2%) favors standing", this means:
+- Basic strategy says to do something else
+- But current deck composition gives you an edge by deviating
+- Follow the deviation for maximum profit!
+
+**Example Deviations**:
+- **16 vs 10**: Normally surrender/hit, but stand when advantage ≥ +0.5%
+- **12 vs 2**: Normally hit, but stand when advantage ≥ +1.0%
+- **10 vs 10**: Normally hit, but double when advantage ≥ +1.5%
+
+### Practical Workflow:
+
+For each hand:
+1. Look at your cards and dealer's upcard
+2. Enter them in the Strategy Advisor
+3. Click "Get Action"
+4. Follow the recommendation
+5. Also check the optimal bet size for next hand
 
 ## Betting Strategy Using Optimal Bet Size
 
@@ -134,6 +191,7 @@ The current implementation includes:
 
 - ✅ Screen capture functionality
 - ✅ Full deck composition tracking (all 13 ranks)
+- ✅ **Strategy Advisor with composition-dependent deviations**
 - ✅ Exact player advantage calculation (EOR-based)
 - ✅ Kelly Criterion optimal bet sizing
 - ✅ Dealer bust probability (composition-adjusted)

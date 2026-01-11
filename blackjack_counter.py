@@ -342,6 +342,261 @@ class CompositionTracker:
         return max(5.0, min(60.0, adjusted_bust_rate))
 
 
+class StrategyEngine:
+    """
+    Blackjack strategy engine with basic strategy and composition-dependent deviations
+    """
+
+    def __init__(self, composition_tracker):
+        self.composition_tracker = composition_tracker
+
+    def get_hand_value(self, cards):
+        """
+        Calculate hand value(s) for a list of cards
+        Returns (hard_total, soft_total) or (total, None) if no ace
+        """
+        total = 0
+        aces = 0
+
+        for card in cards:
+            if card in ['J', 'Q', 'K']:
+                total += 10
+            elif card == 'A':
+                aces += 1
+                total += 11
+            else:
+                total += int(card)
+
+        # Adjust for aces
+        while total > 21 and aces > 0:
+            total -= 10
+            aces -= 1
+
+        if aces > 0:
+            # Soft hand
+            return (total, total)
+        else:
+            # Hard hand
+            return (total, None)
+
+    def is_pair(self, cards):
+        """Check if hand is a pair"""
+        if len(cards) != 2:
+            return False
+
+        # Normalize 10-value cards
+        card1 = '10' if cards[0] in ['10', 'J', 'Q', 'K'] else cards[0]
+        card2 = '10' if cards[1] in ['10', 'J', 'Q', 'K'] else cards[1]
+
+        return card1 == card2
+
+    def get_basic_strategy_action(self, player_cards, dealer_upcard, can_double=True, can_split=True, can_surrender=True):
+        """
+        Get basic strategy action for given situation
+
+        Args:
+            player_cards: List of card ranks (e.g., ['10', 'K'] or ['A', '5'])
+            dealer_upcard: Dealer's upcard rank
+            can_double: Whether doubling is allowed
+            can_split: Whether splitting is allowed
+            can_surrender: Whether surrender is allowed
+
+        Returns: Recommended action string
+        """
+        # Normalize dealer upcard
+        dealer_value = 10 if dealer_upcard in ['J', 'Q', 'K'] else (11 if dealer_upcard == 'A' else int(dealer_upcard))
+
+        # Check for pair first
+        if can_split and self.is_pair(player_cards):
+            return self._get_pair_strategy(player_cards[0], dealer_value, can_double)
+
+        # Get hand values
+        hard_total, soft_total = self.get_hand_value(player_cards)
+
+        # Check for soft hands (has ace counted as 11)
+        if soft_total is not None and hard_total != soft_total:
+            return self._get_soft_strategy(hard_total, dealer_value, can_double)
+
+        # Hard hands
+        return self._get_hard_strategy(hard_total, dealer_value, can_double, can_surrender)
+
+    def _get_pair_strategy(self, card, dealer_value, can_double):
+        """Basic strategy for pairs"""
+        # Normalize to rank
+        rank = '10' if card in ['10', 'J', 'Q', 'K'] else card
+
+        if rank == 'A':
+            return "SPLIT"
+        elif rank == '10':
+            return "STAND"
+        elif rank == '9':
+            if dealer_value in [7, 10, 11]:
+                return "STAND"
+            return "SPLIT"
+        elif rank == '8':
+            return "SPLIT"
+        elif rank == '7':
+            if dealer_value <= 7:
+                return "SPLIT"
+            return "HIT"
+        elif rank == '6':
+            if dealer_value <= 6:
+                return "SPLIT"
+            return "HIT"
+        elif rank == '5':
+            if dealer_value <= 9:
+                return "DOUBLE" if can_double else "HIT"
+            return "HIT"
+        elif rank == '4':
+            if dealer_value in [5, 6]:
+                return "SPLIT"
+            return "HIT"
+        elif rank in ['2', '3']:
+            if dealer_value <= 7:
+                return "SPLIT"
+            return "HIT"
+
+        return "HIT"
+
+    def _get_soft_strategy(self, total, dealer_value, can_double):
+        """Basic strategy for soft hands (hands with ace counted as 11)"""
+        if total >= 19:
+            return "STAND"
+        elif total == 18:
+            if dealer_value <= 6:
+                return "DOUBLE" if can_double else "STAND"
+            elif dealer_value in [7, 8]:
+                return "STAND"
+            else:
+                return "HIT"
+        elif total == 17:
+            if dealer_value in [3, 4, 5, 6]:
+                return "DOUBLE" if can_double else "HIT"
+            return "HIT"
+        elif total in [15, 16]:
+            if dealer_value in [4, 5, 6]:
+                return "DOUBLE" if can_double else "HIT"
+            return "HIT"
+        elif total in [13, 14]:
+            if dealer_value in [5, 6]:
+                return "DOUBLE" if can_double else "HIT"
+            return "HIT"
+        else:
+            return "HIT"
+
+    def _get_hard_strategy(self, total, dealer_value, can_double, can_surrender):
+        """Basic strategy for hard hands"""
+        if total >= 17:
+            return "STAND"
+        elif total == 16:
+            if can_surrender and dealer_value in [9, 10, 11]:
+                return "SURRENDER"
+            if dealer_value <= 6:
+                return "STAND"
+            return "HIT"
+        elif total == 15:
+            if can_surrender and dealer_value == 10:
+                return "SURRENDER"
+            if dealer_value <= 6:
+                return "STAND"
+            return "HIT"
+        elif total == 14:
+            if dealer_value <= 6:
+                return "STAND"
+            return "HIT"
+        elif total == 13:
+            if dealer_value <= 6:
+                return "STAND"
+            return "HIT"
+        elif total == 12:
+            if dealer_value in [4, 5, 6]:
+                return "STAND"
+            return "HIT"
+        elif total == 11:
+            return "DOUBLE" if can_double else "HIT"
+        elif total == 10:
+            if dealer_value <= 9:
+                return "DOUBLE" if can_double else "HIT"
+            return "HIT"
+        elif total == 9:
+            if dealer_value in [3, 4, 5, 6]:
+                return "DOUBLE" if can_double else "HIT"
+            return "HIT"
+        else:
+            return "HIT"
+
+    def get_composition_deviation(self, player_cards, dealer_upcard, basic_action):
+        """
+        Check if composition warrants deviation from basic strategy
+
+        Returns: (should_deviate, new_action, reason) or (False, None, None)
+        """
+        advantage = self.composition_tracker.calculate_player_advantage()
+
+        # Common composition-dependent strategy deviations
+        hard_total, soft_total = self.get_hand_value(player_cards)
+        dealer_value = 10 if dealer_upcard in ['J', 'Q', 'K'] else (11 if dealer_upcard == 'A' else int(dealer_upcard))
+
+        # 16 vs 10: Stand instead of hit/surrender at high counts
+        if hard_total == 16 and dealer_value == 10 and advantage >= 0.5:
+            if basic_action in ["HIT", "SURRENDER"]:
+                return (True, "STAND", f"High count (+{advantage:.1f}%) favors standing")
+
+        # 15 vs 10: Stand instead of surrender at very high counts
+        if hard_total == 15 and dealer_value == 10 and advantage >= 1.0:
+            if basic_action == "SURRENDER":
+                return (True, "STAND", f"Very high count (+{advantage:.1f}%) favors standing")
+
+        # 12 vs 3: Stand instead of hit at high counts
+        if hard_total == 12 and dealer_value == 3 and advantage >= 0.8:
+            if basic_action == "HIT":
+                return (True, "STAND", f"High count (+{advantage:.1f}%) favors standing")
+
+        # 12 vs 2: Stand instead of hit at high counts
+        if hard_total == 12 and dealer_value == 2 and advantage >= 1.0:
+            if basic_action == "HIT":
+                return (True, "STAND", f"High count (+{advantage:.1f}%) favors standing")
+
+        # 10 vs 10: Double at very high counts
+        if hard_total == 10 and dealer_value == 10 and advantage >= 1.5:
+            if basic_action == "HIT":
+                return (True, "DOUBLE", f"Very high count (+{advantage:.1f}%) favors doubling")
+
+        # 10 vs A: Double at very high counts
+        if hard_total == 10 and dealer_value == 11 and advantage >= 1.5:
+            if basic_action == "HIT":
+                return (True, "DOUBLE", f"Very high count (+{advantage:.1f}%) favors doubling")
+
+        # 9 vs 2: Double at high counts
+        if hard_total == 9 and dealer_value == 2 and advantage >= 0.5:
+            if basic_action == "HIT":
+                return (True, "DOUBLE", f"High count (+{advantage:.1f}%) favors doubling")
+
+        # No deviation
+        return (False, None, None)
+
+    def get_recommended_action(self, player_cards, dealer_upcard, can_double=True, can_split=True, can_surrender=True):
+        """
+        Get complete recommendation including composition deviations
+
+        Returns: (action, is_deviation, reason)
+        """
+        # Get basic strategy action
+        basic_action = self.get_basic_strategy_action(
+            player_cards, dealer_upcard, can_double, can_split, can_surrender
+        )
+
+        # Check for composition-dependent deviation
+        should_deviate, deviation_action, reason = self.get_composition_deviation(
+            player_cards, dealer_upcard, basic_action
+        )
+
+        if should_deviate:
+            return (deviation_action, True, reason)
+        else:
+            return (basic_action, False, "Basic strategy")
+
+
 class ScreenCapture:
     """Handles screen capture for card detection"""
 
@@ -378,7 +633,7 @@ class BlackjackCounterGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Blackjack Composition Tracker")
-        self.root.geometry("500x500")
+        self.root.geometry("550x680")
         self.root.attributes('-topmost', True)  # Keep on top
 
         # Create display elements
@@ -388,6 +643,7 @@ class BlackjackCounterGUI:
         self.screen_capture = ScreenCapture()
         self.card_detector = CardDetector()
         self.composition_tracker = CompositionTracker(num_decks=8)
+        self.strategy_engine = StrategyEngine(self.composition_tracker)
 
         # Control flags
         self.is_running = False
@@ -512,6 +768,63 @@ class BlackjackCounterGUI:
             label.pack()
             self.composition_labels[rank] = label
 
+        # Strategy Advisor Section
+        strategy_frame = tk.LabelFrame(self.root, text="Strategy Advisor", font=("Arial", 11, "bold"))
+        strategy_frame.pack(pady=15, padx=20, fill=tk.X)
+
+        # Input row
+        input_frame = tk.Frame(strategy_frame)
+        input_frame.pack(pady=8)
+
+        tk.Label(input_frame, text="Your Hand:", font=("Arial", 10)).grid(row=0, column=0, padx=5)
+        self.player_hand_entry = tk.Entry(input_frame, width=10, font=("Arial", 11))
+        self.player_hand_entry.grid(row=0, column=1, padx=5)
+        self.player_hand_entry.insert(0, "10,6")
+
+        tk.Label(input_frame, text="Dealer:", font=("Arial", 10)).grid(row=0, column=2, padx=5)
+        self.dealer_upcard_entry = tk.Entry(input_frame, width=5, font=("Arial", 11))
+        self.dealer_upcard_entry.grid(row=0, column=3, padx=5)
+        self.dealer_upcard_entry.insert(0, "10")
+
+        self.calc_action_button = tk.Button(
+            input_frame,
+            text="Get Action",
+            command=self.calculate_action,
+            bg="#4CAF50",
+            fg="white",
+            font=("Arial", 10, "bold")
+        )
+        self.calc_action_button.grid(row=0, column=4, padx=10)
+
+        # Action display
+        action_display_frame = tk.Frame(strategy_frame, bg="#f0f0f0", relief=tk.RAISED, bd=2)
+        action_display_frame.pack(pady=10, padx=10, fill=tk.X)
+
+        tk.Label(
+            action_display_frame,
+            text="Recommended Action:",
+            font=("Arial", 11, "bold"),
+            bg="#f0f0f0"
+        ).pack(pady=3)
+
+        self.action_label = tk.Label(
+            action_display_frame,
+            text="STAND",
+            font=("Arial", 28, "bold"),
+            fg="#2196F3",
+            bg="#f0f0f0"
+        )
+        self.action_label.pack(pady=5)
+
+        self.action_reason_label = tk.Label(
+            action_display_frame,
+            text="Basic strategy",
+            font=("Arial", 9, "italic"),
+            fg="gray",
+            bg="#f0f0f0"
+        )
+        self.action_reason_label.pack(pady=3)
+
         # Status message
         self.status_label = tk.Label(
             self.root,
@@ -634,6 +947,61 @@ class BlackjackCounterGUI:
             text=status,
             fg="green" if advantage >= 0.5 else "orange" if advantage >= 0.0 else "red"
         )
+
+    def calculate_action(self):
+        """Calculate and display recommended action based on player hand and dealer upcard"""
+        try:
+            # Parse player hand
+            player_hand_str = self.player_hand_entry.get().strip()
+            player_cards = [card.strip().upper() for card in player_hand_str.split(',')]
+
+            # Parse dealer upcard
+            dealer_upcard = self.dealer_upcard_entry.get().strip().upper()
+
+            # Validate inputs
+            valid_ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+            for card in player_cards:
+                if card not in valid_ranks:
+                    self.action_label.config(text="INVALID HAND", fg="red")
+                    self.action_reason_label.config(text="Use format: 10,6 or A,5")
+                    return
+
+            if dealer_upcard not in valid_ranks:
+                self.action_label.config(text="INVALID DEALER", fg="red")
+                self.action_reason_label.config(text="Enter dealer upcard (2-A)")
+                return
+
+            # Get recommended action
+            action, is_deviation, reason = self.strategy_engine.get_recommended_action(
+                player_cards, dealer_upcard
+            )
+
+            # Update display
+            self.action_label.config(text=action)
+            self.action_reason_label.config(text=reason)
+
+            # Color code the action
+            action_colors = {
+                "HIT": "#FF9800",      # Orange
+                "STAND": "#2196F3",    # Blue
+                "DOUBLE": "#4CAF50",   # Green
+                "SPLIT": "#9C27B0",    # Purple
+                "SURRENDER": "#F44336" # Red
+            }
+
+            action_color = action_colors.get(action, "#2196F3")
+            self.action_label.config(fg=action_color)
+
+            # Highlight if deviation from basic strategy
+            if is_deviation:
+                self.action_label.config(fg="#FF5722")  # Deep orange for deviations
+                self.action_reason_label.config(fg="#FF5722", font=("Arial", 9, "italic", "bold"))
+            else:
+                self.action_reason_label.config(fg="gray", font=("Arial", 9, "italic"))
+
+        except Exception as e:
+            self.action_label.config(text="ERROR", fg="red")
+            self.action_reason_label.config(text=str(e))
 
     def scan_loop(self):
         """Main scanning loop running in separate thread"""

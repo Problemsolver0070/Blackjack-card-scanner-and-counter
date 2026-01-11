@@ -5,6 +5,7 @@ A Linux application that performs real-time screen analysis to detect playing ca
 ## Overview
 
 This software monitors your screen in real-time, detects blackjack cards being played, and provides precise card counting metrics including:
+- **Strategy Advisor**: Tells you the optimal action (Hit/Stand/Double/Split/Surrender) with composition-dependent deviations
 - **Optimal Bet Size**: Exact bet amount in units using Kelly Criterion
 - **Player Advantage**: Calculated edge based on exact deck composition
 - **Dealer Bust Probability**: Real-time chance of dealer busting based on composition
@@ -14,13 +15,14 @@ This software monitors your screen in real-time, detects blackjack cards being p
 ## Features
 
 - 🎴 Real-time card detection using computer vision (OpenCV)
+- 🎯 **Strategy Advisor**: Basic strategy + composition-dependent deviations
 - 🧮 Full deck composition tracking (not simplified counting systems)
 - 📊 Exact player advantage calculation using Effect of Removal (EOR)
 - 💰 Kelly Criterion optimal bet sizing in units
-- 🎯 Dealer bust probability based on current composition
+- 🎲 Dealer bust probability based on current composition
 - 🖥️ Always-on-top GUI display
 - 📈 Key card composition display (5s, 6s, 10s, Aces)
-- 🎲 Optimized for 8-deck shoes with ~50% penetration
+- 🃏 Optimized for 8-deck shoes with ~50% penetration
 - 🔄 Easy reset between shoes
 - ⚡ Low CPU usage and efficient screen capture
 
@@ -114,6 +116,37 @@ The system calculates the real-time probability of the dealer busting based on c
 
 The displayed bust probability is a weighted average across all possible dealer upcards, adjusted for the current composition. When the deck is rich in 10s, this percentage increases significantly.
 
+### Strategy Advisor
+
+The application includes a complete strategy engine that tells you the optimal play for any situation:
+
+**Basic Strategy Implementation**:
+- Complete basic strategy for S17 (dealer stands on soft 17)
+- Handles hard totals, soft totals, and pairs
+- Includes surrender when applicable
+- Considers doubling restrictions
+
+**Composition-Dependent Deviations**:
+When the deck composition gives you an edge, the system recommends deviating from basic strategy:
+
+| Situation | Basic Strategy | High Count Deviation | When |
+|-----------|----------------|---------------------|------|
+| 16 vs 10 | Hit/Surrender | **STAND** | Advantage ≥ +0.5% |
+| 15 vs 10 | Surrender | **STAND** | Advantage ≥ +1.0% |
+| 12 vs 2 | Hit | **STAND** | Advantage ≥ +1.0% |
+| 12 vs 3 | Hit | **STAND** | Advantage ≥ +0.8% |
+| 10 vs 10 | Hit | **DOUBLE** | Advantage ≥ +1.5% |
+| 10 vs A | Hit | **DOUBLE** | Advantage ≥ +1.5% |
+| 9 vs 2 | Hit | **DOUBLE** | Advantage ≥ +0.5% |
+
+**How to use**:
+1. Enter your hand (e.g., "10,6" or "A,5")
+2. Enter dealer's upcard (e.g., "10" or "A")
+3. Click "Get Action"
+4. The app shows the optimal play with reasoning
+
+Deviations are highlighted in **deep orange** to alert you when the composition warrants a non-standard play.
+
 ### Technology Stack
 
 - **OpenCV**: Computer vision for card detection
@@ -138,6 +171,7 @@ This is a functional implementation with the following capabilities:
 
 ✅ Screen capture and monitoring
 ✅ Full deck composition tracking (all 13 ranks)
+✅ **Strategy Advisor with composition-dependent deviations**
 ✅ Exact player advantage calculation using EOR
 ✅ Kelly Criterion optimal bet sizing
 ✅ Dealer bust probability (composition-adjusted)
