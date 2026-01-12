@@ -118,34 +118,52 @@ The displayed bust probability is a weighted average across all possible dealer 
 
 ### Strategy Advisor
 
-The application includes a complete strategy engine that tells you the optimal play for any situation:
+The application includes a **true composition-dependent strategy engine** that calculates the mathematically optimal play for every situation using exact deck composition:
 
-**Basic Strategy Implementation**:
-- Complete basic strategy for S17 (dealer stands on soft 17)
-- Handles hard totals, soft totals, and pairs
-- Includes surrender when applicable
-- Considers doubling restrictions
+**Core Algorithm**:
+The strategy engine calculates **Expected Value (EV)** for each possible action based on the exact remaining cards:
 
-**Composition-Dependent Deviations**:
-When the deck composition gives you an edge, the system recommends deviating from basic strategy:
+1. **EV(Stand)**: Probability-weighted outcomes vs. dealer
+   - Calculates dealer bust probability from composition
+   - Models dealer outcomes (17-21) based on remaining cards
+   - Compares player total vs. all dealer outcomes
 
-| Situation | Basic Strategy | High Count Deviation | When |
-|-----------|----------------|---------------------|------|
-| 16 vs 10 | Hit/Surrender | **STAND** | Advantage ≥ +0.5% |
-| 15 vs 10 | Surrender | **STAND** | Advantage ≥ +1.0% |
-| 12 vs 2 | Hit | **STAND** | Advantage ≥ +1.0% |
-| 12 vs 3 | Hit | **STAND** | Advantage ≥ +0.8% |
-| 10 vs 10 | Hit | **DOUBLE** | Advantage ≥ +1.5% |
-| 10 vs A | Hit | **DOUBLE** | Advantage ≥ +1.5% |
-| 9 vs 2 | Hit | **DOUBLE** | Advantage ≥ +0.5% |
+2. **EV(Hit)**: Expected value of drawing one card
+   - Considers probability of drawing each remaining rank
+   - Calculates new hand total for each possible draw
+   - Evaluates stand EV after drawing
+
+3. **EV(Double)**: Expected value of doubling down
+   - Draw exactly one card, bet is doubled
+   - 2× the EV of single-card outcome
+
+4. **Choose Maximum EV**: Selects action with highest expected value
+
+**Why This Is Superior to Basic Strategy**:
+- **Basic strategy** uses fixed rules based on infinite deck assumption
+- **This system** uses exact probabilities from current remaining cards
+- Automatically finds profitable deviations when composition creates opportunities
+- Maximizes EV on every single decision
+
+**Example Composition-Dependent Plays**:
+
+| Situation | Basic Strategy | Composition-Dependent Strategy |
+|-----------|----------------|-------------------------------|
+| 16 vs 10 | Hit/Surrender | **STAND** when many small cards removed (Stand EV > Hit EV) |
+| 12 vs 2 | Hit | **STAND** when deck rich in 10s (bust probability too high) |
+| 10 vs 10 | Hit | **DOUBLE** when deck very rich in 10s (Double EV > Hit EV) |
+| 9 vs 2 | Hit | **DOUBLE** when composition favors it |
+
+The system automatically detects these situations by calculating exact EVs!
 
 **How to use**:
 1. Enter your hand (e.g., "10,6" or "A,5")
 2. Enter dealer's upcard (e.g., "10" or "A")
 3. Click "Get Action"
-4. The app shows the optimal play with reasoning
+4. The app shows the optimal play with EV analysis
 
-Deviations are highlighted in **deep orange** to alert you when the composition warrants a non-standard play.
+Composition-dependent deviations are highlighted in **deep orange** and show EV calculations:
+- Example: "Composition analysis: Stand EV=0.156 > Hit EV=0.142 (Edge: +0.8%)"
 
 ### Technology Stack
 
