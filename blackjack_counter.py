@@ -815,7 +815,7 @@ class BlackjackCounterGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Elite Blackjack Pro - Composition Tracker")
-        self.root.geometry("700x950")
+        self.root.geometry("750x900")
         self.root.attributes('-topmost', True)  # Keep on top
 
         # Luxurious casino color scheme
@@ -835,6 +835,28 @@ class BlackjackCounterGUI:
 
         self.root.configure(bg=self.colors['bg_main'])
 
+        # Create canvas with scrollbar for scrollable content
+        self.canvas = tk.Canvas(self.root, bg=self.colors['bg_main'], highlightthickness=0)
+        self.scrollbar = tk.Scrollbar(self.root, orient="vertical", command=self.canvas.yview)
+        self.scrollable_frame = tk.Frame(self.canvas, bg=self.colors['bg_main'])
+
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+
+        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        # Pack canvas and scrollbar
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+
+        # Enable mouse wheel scrolling
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        self.canvas.bind_all("<Button-4>", self._on_mousewheel)
+        self.canvas.bind_all("<Button-5>", self._on_mousewheel)
+
         # Create display elements
         self.create_widgets()
 
@@ -848,11 +870,18 @@ class BlackjackCounterGUI:
         self.is_running = False
         self.scan_thread = None
 
+    def _on_mousewheel(self, event):
+        """Handle mouse wheel scrolling"""
+        if event.num == 4 or event.delta > 0:
+            self.canvas.yview_scroll(-1, "units")
+        elif event.num == 5 or event.delta < 0:
+            self.canvas.yview_scroll(1, "units")
+
     def create_widgets(self):
         """Create GUI widgets with luxurious casino styling"""
 
         # ===== Header =====
-        header_frame = tk.Frame(self.root, bg=self.colors['bg_dark'], height=70)
+        header_frame = tk.Frame(self.scrollable_frame, bg=self.colors['bg_dark'], height=70)
         header_frame.pack(fill=tk.X, pady=(0, 15))
 
         title_label = tk.Label(
@@ -875,7 +904,7 @@ class BlackjackCounterGUI:
         subtitle_label.pack()
 
         # ===== Optimal Bet Display (PRIMARY - Premium Card Style) =====
-        bet_outer_frame = tk.Frame(self.root, bg=self.colors['bg_main'])
+        bet_outer_frame = tk.Frame(self.scrollable_frame, bg=self.colors['bg_main'])
         bet_outer_frame.pack(pady=10, padx=25, fill=tk.X)
 
         bet_frame = tk.Frame(bet_outer_frame, bg='#FFFFFF', relief=tk.RAISED, bd=3)
@@ -901,7 +930,7 @@ class BlackjackCounterGUI:
         self.bet_label.pack()
 
         # ===== Stats Dashboard =====
-        stats_frame = tk.Frame(self.root, bg=self.colors['bg_card'], relief=tk.GROOVE, bd=2)
+        stats_frame = tk.Frame(self.scrollable_frame, bg=self.colors['bg_card'], relief=tk.GROOVE, bd=2)
         stats_frame.pack(pady=15, padx=25, fill=tk.X)
 
         # Stats grid - 2x2 layout
@@ -993,7 +1022,7 @@ class BlackjackCounterGUI:
         self.penetration_label.pack(pady=5)
 
         # ===== Composition Summary (Key Cards) =====
-        comp_frame = tk.Frame(self.root, bg=self.colors['bg_card'], relief=tk.GROOVE, bd=2)
+        comp_frame = tk.Frame(self.scrollable_frame, bg=self.colors['bg_card'], relief=tk.GROOVE, bd=2)
         comp_frame.pack(pady=10, padx=25, fill=tk.X)
 
         tk.Label(
@@ -1037,7 +1066,7 @@ class BlackjackCounterGUI:
             self.composition_labels[rank] = label
 
         # ===== Manual Card Entry Section =====
-        card_entry_frame = tk.Frame(self.root, bg=self.colors['bg_card'], relief=tk.GROOVE, bd=2)
+        card_entry_frame = tk.Frame(self.scrollable_frame, bg=self.colors['bg_card'], relief=tk.GROOVE, bd=2)
         card_entry_frame.pack(pady=10, padx=25, fill=tk.X)
 
         tk.Label(
@@ -1129,7 +1158,7 @@ class BlackjackCounterGUI:
         ).pack(pady=(0, 10))
 
         # ===== Strategy Advisor Section =====
-        strategy_frame = tk.Frame(self.root, bg=self.colors['bg_card'], relief=tk.GROOVE, bd=2)
+        strategy_frame = tk.Frame(self.scrollable_frame, bg=self.colors['bg_card'], relief=tk.GROOVE, bd=2)
         strategy_frame.pack(pady=15, padx=25, fill=tk.X)
 
         tk.Label(
@@ -1238,7 +1267,7 @@ class BlackjackCounterGUI:
         self.action_reason_label.pack(pady=(0, 10))
 
         # ===== Status Message =====
-        status_outer = tk.Frame(self.root, bg=self.colors['bg_main'])
+        status_outer = tk.Frame(self.scrollable_frame, bg=self.colors['bg_main'])
         status_outer.pack(pady=15)
 
         self.status_label = tk.Label(
@@ -1251,7 +1280,7 @@ class BlackjackCounterGUI:
         self.status_label.pack()
 
         # ===== Control Buttons =====
-        button_frame = tk.Frame(self.root, bg=self.colors['bg_main'])
+        button_frame = tk.Frame(self.scrollable_frame, bg=self.colors['bg_main'])
         button_frame.pack(pady=15)
 
         self.start_button = tk.Button(
@@ -1304,8 +1333,8 @@ class BlackjackCounterGUI:
         self.reset_button.pack(side=tk.LEFT, padx=8)
 
         # ===== Footer =====
-        footer_frame = tk.Frame(self.root, bg=self.colors['bg_dark'], height=40)
-        footer_frame.pack(fill=tk.X, side=tk.BOTTOM)
+        footer_frame = tk.Frame(self.scrollable_frame, bg=self.colors['bg_dark'], height=40)
+        footer_frame.pack(fill=tk.X, pady=(20, 0))
 
         tk.Label(
             footer_frame,
