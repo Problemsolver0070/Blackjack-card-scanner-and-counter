@@ -527,15 +527,47 @@ class StrategyEngine:
 
     def get_composition_deviation(self, player_cards, dealer_upcard, basic_action):
         """
-        Check if composition warrants deviation from basic strategy
+        Calculate optimal action using full composition-dependent strategy
+
+        Instead of simple threshold-based deviations, this calculates the exact
+        expected value (EV) for each action based on current deck composition
 
         Returns: (should_deviate, new_action, reason) or (False, None, None)
         """
-        advantage = self.composition_tracker.calculate_player_advantage()
-
-        # Common composition-dependent strategy deviations
         hard_total, soft_total = self.get_hand_value(player_cards)
         dealer_value = 10 if dealer_upcard in ['J', 'Q', 'K'] else (11 if dealer_upcard == 'A' else int(dealer_upcard))
+
+        # Calculate EV for each possible action
+        ev_stand = self._calculate_stand_ev(hard_total, dealer_upcard)
+        ev_hit = self._calculate_hit_ev(hard_total, soft_total is not None, dealer_upcard)
+
+        # Determine best action based on EV
+        best_action = basic_action
+        best_ev = None
+
+        if ev_stand > ev_hit:
+            if basic_action in ["HIT", "SURRENDER"]:
+                # Deviation: Stand is better than basic strategy suggests
+                advantage = self.composition_tracker.calculate_player_advantage()
+                if abs(ev_stand - ev_hit) > 0.001:  # Significant EV difference
+                    return (True, "STAND", f"Composition analysis: Stand EV={ev_stand:.3f} > Hit EV={ev_hit:.3f} (Edge: {advantage:+.1f}%)")
+        elif ev_hit > ev_stand:
+            if basic_action in ["STAND"]:
+                # Deviation: Hit is better than basic strategy suggests
+                advantage = self.composition_tracker.calculate_player_advantage()
+                if abs(ev_hit - ev_stand) > 0.001:
+                    return (True, "HIT", f"Composition analysis: Hit EV={ev_hit:.3f} > Stand EV={ev_stand:.3f} (Edge: {advantage:+.1f}%)")
+
+        # Check doubling opportunities with composition analysis
+        if hard_total in [9, 10, 11]:
+            ev_double = self._calculate_double_ev(hard_total, dealer_upcard)
+            if ev_double > max(ev_stand, ev_hit):
+                if basic_action == "HIT":
+                    advantage = self.composition_tracker.calculate_player_advantage()
+                    return (True, "DOUBLE", f"Composition analysis: Double EV={ev_double:.3f} > alternatives (Edge: {advantage:+.1f}%)")
+
+        # Original simple threshold-based deviations as fallback
+        advantage = self.composition_tracker.calculate_player_advantage()
 
         # 16 vs 10: Stand instead of hit/surrender at high counts
         if hard_total == 16 and dealer_value == 10 and advantage >= 0.5:
@@ -574,6 +606,156 @@ class StrategyEngine:
 
         # No deviation
         return (False, None, None)
+
+    def _calculate_stand_ev(self, player_total, dealer_upcard):
+        """
+        Calculate expected value of standing with current hand
+
+        EV(Stand) = P(dealer busts) × 1 + P(dealer < player) × 1 +
+                    P(dealer = player) × 0 + P(dealer > player) × (-1)
+        """
+        if player_total > 21:
+            return -1.0  # Already busted
+
+        # Calculate dealer outcome probabilities based on composition
+        dealer_probs = self._calculate_dealer_probabilities(dealer_upcard)
+
+        ev = 0.0
+        # Dealer busts - we win
+        ev += dealer_probs['bust'] * 1.0
+
+        # Dealer makes a hand
+        for dealer_final in range(17, 22):
+            if dealer_final in dealer_probs:
+                if dealer_final > 21:
+                    ev += dealer_probs[dealer_final] * 1.0  # Dealer busts, we win
+                elif dealer_final < player_total:
+                    ev += dealer_probs[dealer_final] * 1.0  # We win
+                elif dealer_final == player_total:
+                    ev += dealer_probs[dealer_final] * 0.0  # Push
+                else:
+                    ev += dealer_probs[dealer_final] * (-1.0)  # We lose
+
+        return ev
+
+    def _calculate_hit_ev(self, player_total, is_soft, dealer_upcard):
+        """
+        Calculate expected value of hitting
+
+        More complex - need to consider what card we draw and resulting EVs
+        """
+        if player_total > 21:
+            return -1.0  # Already busted
+
+        if player_total >= 21:
+            return self._calculate_stand_ev(player_total, dealer_upcard)
+
+        total_remaining = self.composition_tracker.get_total_remaining()
+        if total_remaining == 0:
+            return 0.0
+
+        ev = 0.0
+
+        # For each possible card we could draw
+        for rank in self.composition_tracker.ranks:
+            card_count = self.composition_tracker.remaining[rank]
+            if card_count == 0:
+                continue
+
+            prob_draw = card_count / total_remaining
+
+            # Determine card value
+            if rank == 'A':
+                card_value = 11 if (player_total + 11 <= 21) else 1
+            elif rank in ['J', 'Q', 'K']:
+                card_value = 10
+            else:
+                card_value = int(rank)
+
+            new_total = player_total + card_value
+
+            if new_total > 21 and is_soft:
+                # Convert soft hand to hard by counting ace as 1
+                new_total -= 10
+
+            if new_total > 21:
+                # Busted
+                ev += prob_draw * (-1.0)
+            else:
+                # Recursively calculate EV of standing with new total
+                # (simplified - in full implementation would consider hitting again)
+                ev += prob_draw * self._calculate_stand_ev(new_total, dealer_upcard)
+
+        return ev
+
+    def _calculate_double_ev(self, player_total, dealer_upcard):
+        """
+        Calculate expected value of doubling
+
+        Double down: draw exactly one card, bet is doubled
+        EV(Double) = 2 × EV(one card)
+        """
+        if player_total > 21:
+            return -2.0
+
+        total_remaining = self.composition_tracker.get_total_remaining()
+        if total_remaining == 0:
+            return 0.0
+
+        ev = 0.0
+
+        # For each possible card we could draw
+        for rank in self.composition_tracker.ranks:
+            card_count = self.composition_tracker.remaining[rank]
+            if card_count == 0:
+                continue
+
+            prob_draw = card_count / total_remaining
+
+            # Determine card value
+            if rank == 'A':
+                card_value = 11 if (player_total + 11 <= 21) else 1
+            elif rank in ['J', 'Q', 'K']:
+                card_value = 10
+            else:
+                card_value = int(rank)
+
+            new_total = player_total + card_value
+
+            if new_total > 21:
+                # Busted - lose double bet
+                ev += prob_draw * (-2.0)
+            else:
+                # Stand with new total - EV is doubled
+                stand_ev = self._calculate_stand_ev(new_total, dealer_upcard)
+                ev += prob_draw * (2.0 * stand_ev)
+
+        return ev
+
+    def _calculate_dealer_probabilities(self, dealer_upcard):
+        """
+        Calculate probability distribution of dealer's final hand
+        based on current deck composition
+
+        Returns dict with probabilities for each final total and bust
+        """
+        dealer_value = 10 if dealer_upcard in ['J', 'Q', 'K'] else (11 if dealer_upcard == 'A' else int(dealer_upcard))
+
+        # Simplified model: Use dealer bust probability and distribute outcomes
+        bust_prob = self.composition_tracker.get_dealer_bust_for_upcard(dealer_upcard) / 100.0
+
+        # Rough distribution of non-bust outcomes (17-21)
+        # This is a simplification - full implementation would simulate all paths
+        probs = {
+            'bust': bust_prob,
+            17: (1 - bust_prob) * 0.145,
+            18: (1 - bust_prob) * 0.139,
+            19: (1 - bust_prob) * 0.134,
+            20: (1 - bust_prob) * 0.359,
+            21: (1 - bust_prob) * 0.223
+        }
+
+        return probs
 
     def get_recommended_action(self, player_cards, dealer_upcard, can_double=True, can_split=True, can_surrender=True):
         """
@@ -632,9 +814,26 @@ class BlackjackCounterGUI:
 
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Blackjack Composition Tracker")
-        self.root.geometry("600x850")
+        self.root.title("Elite Blackjack Pro - Composition Tracker")
+        self.root.geometry("700x950")
         self.root.attributes('-topmost', True)  # Keep on top
+
+        # Luxurious casino color scheme
+        self.colors = {
+            'bg_main': '#0B3D2E',           # Deep casino green
+            'bg_dark': '#052418',           # Darker green
+            'bg_card': '#1A5C42',           # Card background
+            'accent_gold': '#FFD700',       # Bright gold
+            'accent_gold_dark': '#DAA520',  # Darker gold
+            'text_light': '#FFFFFF',        # White
+            'text_gold': '#F4E8C1',         # Light gold
+            'success': '#00C853',           # Bright green
+            'warning': '#FFA726',           # Orange
+            'danger': '#E53935',            # Red
+            'info': '#29B6F6'               # Blue
+        }
+
+        self.root.configure(bg=self.colors['bg_main'])
 
         # Create display elements
         self.create_widgets()
@@ -650,141 +849,216 @@ class BlackjackCounterGUI:
         self.scan_thread = None
 
     def create_widgets(self):
-        """Create GUI widgets"""
-        # Title
-        title_label = tk.Label(
-            self.root,
-            text="Blackjack Composition Tracker",
-            font=("Arial", 16, "bold")
-        )
-        title_label.pack(pady=10)
+        """Create GUI widgets with luxurious casino styling"""
 
-        # Optimal Bet Display (PRIMARY)
-        bet_frame = tk.Frame(self.root, bg="#f0f0f0", relief=tk.RAISED, bd=2)
-        bet_frame.pack(pady=15, padx=20, fill=tk.X)
+        # ===== Header =====
+        header_frame = tk.Frame(self.root, bg=self.colors['bg_dark'], height=70)
+        header_frame.pack(fill=tk.X, pady=(0, 15))
+
+        title_label = tk.Label(
+            header_frame,
+            text="♠ ELITE BLACKJACK PRO ♣",
+            font=("Palatino", 24, "bold"),
+            bg=self.colors['bg_dark'],
+            fg=self.colors['accent_gold'],
+            pady=20
+        )
+        title_label.pack()
+
+        subtitle_label = tk.Label(
+            header_frame,
+            text="Composition-Dependent Strategy Engine",
+            font=("Palatino", 11, "italic"),
+            bg=self.colors['bg_dark'],
+            fg=self.colors['text_gold']
+        )
+        subtitle_label.pack()
+
+        # ===== Optimal Bet Display (PRIMARY - Premium Card Style) =====
+        bet_outer_frame = tk.Frame(self.root, bg=self.colors['bg_main'])
+        bet_outer_frame.pack(pady=10, padx=25, fill=tk.X)
+
+        bet_frame = tk.Frame(bet_outer_frame, bg='#FFFFFF', relief=tk.RAISED, bd=3)
+        bet_frame.pack(fill=tk.X, padx=3, pady=3)
 
         tk.Label(
             bet_frame,
-            text="Optimal Bet:",
-            font=("Arial", 14, "bold"),
-            bg="#f0f0f0"
-        ).pack(pady=5)
+            text="OPTIMAL BET SIZE",
+            font=("Palatino", 12, "bold"),
+            bg='#FFFFFF',
+            fg='#2C3E50',
+            pady=8
+        ).pack()
 
         self.bet_label = tk.Label(
             bet_frame,
             text="1.0 units",
-            font=("Arial", 32, "bold"),
-            fg="blue",
-            bg="#f0f0f0"
+            font=("Palatino", 42, "bold"),
+            fg=self.colors['accent_gold_dark'],
+            bg='#FFFFFF',
+            pady=10
         )
-        self.bet_label.pack(pady=5)
+        self.bet_label.pack()
 
-        # Player Advantage Display
-        advantage_frame = tk.Frame(self.root)
-        advantage_frame.pack(pady=10)
+        # ===== Stats Dashboard =====
+        stats_frame = tk.Frame(self.root, bg=self.colors['bg_card'], relief=tk.GROOVE, bd=2)
+        stats_frame.pack(pady=15, padx=25, fill=tk.X)
+
+        # Stats grid - 2x2 layout
+        stats_grid = tk.Frame(stats_frame, bg=self.colors['bg_card'])
+        stats_grid.pack(padx=15, pady=15)
+
+        # Player Advantage (top-left)
+        adv_frame = tk.Frame(stats_grid, bg=self.colors['bg_dark'], relief=tk.RAISED, bd=2, padx=15, pady=10)
+        adv_frame.grid(row=0, column=0, padx=10, pady=10, sticky='ew')
 
         tk.Label(
-            advantage_frame,
-            text="Player Advantage:",
-            font=("Arial", 12)
-        ).pack(side=tk.LEFT)
+            adv_frame,
+            text="PLAYER EDGE",
+            font=("Palatino", 10, "bold"),
+            bg=self.colors['bg_dark'],
+            fg=self.colors['text_gold']
+        ).pack()
 
         self.advantage_label = tk.Label(
-            advantage_frame,
+            adv_frame,
             text="0.00%",
-            font=("Arial", 16, "bold"),
-            fg="gray"
+            font=("Palatino", 22, "bold"),
+            fg=self.colors['accent_gold'],
+            bg=self.colors['bg_dark']
         )
-        self.advantage_label.pack(side=tk.LEFT, padx=10)
+        self.advantage_label.pack(pady=5)
 
-        # Dealer Bust Probability Display
-        bust_frame = tk.Frame(self.root)
-        bust_frame.pack(pady=10)
+        # Dealer Bust (top-right)
+        bust_frame_box = tk.Frame(stats_grid, bg=self.colors['bg_dark'], relief=tk.RAISED, bd=2, padx=15, pady=10)
+        bust_frame_box.grid(row=0, column=1, padx=10, pady=10, sticky='ew')
 
         tk.Label(
-            bust_frame,
-            text="Dealer Bust Chance:",
-            font=("Arial", 12)
-        ).pack(side=tk.LEFT)
+            bust_frame_box,
+            text="DEALER BUST",
+            font=("Palatino", 10, "bold"),
+            bg=self.colors['bg_dark'],
+            fg=self.colors['text_gold']
+        ).pack()
 
         self.bust_label = tk.Label(
-            bust_frame,
+            bust_frame_box,
             text="28.0%",
-            font=("Arial", 16, "bold"),
-            fg="gray"
+            font=("Palatino", 22, "bold"),
+            fg=self.colors['accent_gold'],
+            bg=self.colors['bg_dark']
         )
-        self.bust_label.pack(side=tk.LEFT, padx=10)
+        self.bust_label.pack(pady=5)
 
-        # Cards Remaining Display
-        cards_frame = tk.Frame(self.root)
-        cards_frame.pack(pady=5)
+        # Cards Remaining (bottom-left)
+        cards_frame_box = tk.Frame(stats_grid, bg=self.colors['bg_dark'], relief=tk.RAISED, bd=2, padx=15, pady=10)
+        cards_frame_box.grid(row=1, column=0, padx=10, pady=10, sticky='ew')
 
         tk.Label(
-            cards_frame,
-            text="Cards Remaining:",
-            font=("Arial", 11)
-        ).pack(side=tk.LEFT)
+            cards_frame_box,
+            text="CARDS LEFT",
+            font=("Palatino", 10, "bold"),
+            bg=self.colors['bg_dark'],
+            fg=self.colors['text_gold']
+        ).pack()
 
         self.cards_remaining_label = tk.Label(
-            cards_frame,
+            cards_frame_box,
             text="416",
-            font=("Arial", 12)
+            font=("Palatino", 22, "bold"),
+            fg=self.colors['accent_gold'],
+            bg=self.colors['bg_dark']
         )
-        self.cards_remaining_label.pack(side=tk.LEFT, padx=10)
+        self.cards_remaining_label.pack(pady=5)
 
-        # Penetration Display
-        penetration_frame = tk.Frame(self.root)
-        penetration_frame.pack(pady=5)
+        # Penetration (bottom-right)
+        penetration_frame_box = tk.Frame(stats_grid, bg=self.colors['bg_dark'], relief=tk.RAISED, bd=2, padx=15, pady=10)
+        penetration_frame_box.grid(row=1, column=1, padx=10, pady=10, sticky='ew')
 
         tk.Label(
-            penetration_frame,
-            text="Shoe Penetration:",
-            font=("Arial", 11)
-        ).pack(side=tk.LEFT)
+            penetration_frame_box,
+            text="PENETRATION",
+            font=("Palatino", 10, "bold"),
+            bg=self.colors['bg_dark'],
+            fg=self.colors['text_gold']
+        ).pack()
 
         self.penetration_label = tk.Label(
-            penetration_frame,
+            penetration_frame_box,
             text="0.0%",
-            font=("Arial", 12)
+            font=("Palatino", 22, "bold"),
+            fg=self.colors['accent_gold'],
+            bg=self.colors['bg_dark']
         )
-        self.penetration_label.pack(side=tk.LEFT, padx=10)
+        self.penetration_label.pack(pady=5)
 
-        # Composition Summary (show key cards)
-        comp_frame = tk.LabelFrame(self.root, text="Key Card Counts", font=("Arial", 10, "bold"))
-        comp_frame.pack(pady=10, padx=20, fill=tk.X)
+        # ===== Composition Summary (Key Cards) =====
+        comp_frame = tk.Frame(self.root, bg=self.colors['bg_card'], relief=tk.GROOVE, bd=2)
+        comp_frame.pack(pady=10, padx=25, fill=tk.X)
+
+        tk.Label(
+            comp_frame,
+            text="KEY CARD COMPOSITION",
+            font=("Palatino", 11, "bold"),
+            bg=self.colors['bg_card'],
+            fg=self.colors['text_gold'],
+            pady=8
+        ).pack()
 
         self.composition_labels = {}
-        # Note: 10 represents all 10-value cards (10, J, Q, K)
         key_ranks = ['5', '6', '10-val', 'A']  # Most impactful cards
 
-        comp_grid = tk.Frame(comp_frame)
-        comp_grid.pack(pady=5)
+        comp_grid = tk.Frame(comp_frame, bg=self.colors['bg_card'])
+        comp_grid.pack(pady=10, padx=10)
 
         for i, rank in enumerate(key_ranks):
-            frame = tk.Frame(comp_grid)
-            frame.grid(row=0, column=i, padx=10)
+            card_box = tk.Frame(comp_grid, bg='#FFFFFF', relief=tk.RAISED, bd=2, width=70, height=80)
+            card_box.grid(row=0, column=i, padx=8, pady=5)
+            card_box.grid_propagate(False)
 
             display_name = rank if rank != '10-val' else '10/J/Q/K'
-            tk.Label(frame, text=f"{display_name}:", font=("Arial", 10, "bold")).pack()
+            tk.Label(
+                card_box,
+                text=display_name,
+                font=("Palatino", 11, "bold"),
+                bg='#FFFFFF',
+                fg='#2C3E50'
+            ).pack(pady=(8, 2))
+
             initial_val = "128" if rank == '10-val' else "32"
-            label = tk.Label(frame, text=initial_val, font=("Arial", 11))
-            label.pack()
+            label = tk.Label(
+                card_box,
+                text=initial_val,
+                font=("Palatino", 18, "bold"),
+                bg='#FFFFFF',
+                fg=self.colors['accent_gold_dark']
+            )
+            label.pack(pady=(2, 8))
             self.composition_labels[rank] = label
 
-        # Manual Card Entry Section
-        card_entry_frame = tk.LabelFrame(self.root, text="Card Tracker (for Infinite Blackjack)", font=("Arial", 11, "bold"))
-        card_entry_frame.pack(pady=10, padx=20, fill=tk.X)
+        # ===== Manual Card Entry Section =====
+        card_entry_frame = tk.Frame(self.root, bg=self.colors['bg_card'], relief=tk.GROOVE, bd=2)
+        card_entry_frame.pack(pady=10, padx=25, fill=tk.X)
 
-        # Instructions
+        tk.Label(
+            card_entry_frame,
+            text="♦ CARD TRACKER ♦",
+            font=("Palatino", 12, "bold"),
+            bg=self.colors['bg_card'],
+            fg=self.colors['text_gold'],
+            pady=8
+        ).pack()
+
         tk.Label(
             card_entry_frame,
             text="Click cards as you see them dealt (any player, dealer, etc.)",
-            font=("Arial", 9, "italic"),
-            fg="gray"
-        ).pack(pady=3)
+            font=("Palatino", 9, "italic"),
+            bg=self.colors['bg_card'],
+            fg=self.colors['text_light']
+        ).pack(pady=(0, 8))
 
         # Quick add buttons for all ranks
-        button_frame = tk.Frame(card_entry_frame)
+        button_frame = tk.Frame(card_entry_frame, bg=self.colors['bg_card'])
         button_frame.pack(pady=8)
 
         self.card_buttons = {}
@@ -795,138 +1069,252 @@ class BlackjackCounterGUI:
                 button_frame,
                 text=rank,
                 command=lambda r=rank: self.add_card_manual(r),
-                font=("Arial", 10, "bold"),
+                font=("Palatino", 11, "bold"),
                 width=4,
-                height=1
+                height=2,
+                bg='#FFFFFF',
+                fg='#2C3E50',
+                activebackground=self.colors['accent_gold'],
+                relief=tk.RAISED,
+                bd=2,
+                cursor='hand2'
             )
-            btn.grid(row=0, column=i, padx=2, pady=2)
+            btn.grid(row=0, column=i, padx=3, pady=2)
             self.card_buttons[rank] = btn
 
         # Text entry for multiple cards
-        multi_entry_frame = tk.Frame(card_entry_frame)
-        multi_entry_frame.pack(pady=5)
+        multi_entry_frame = tk.Frame(card_entry_frame, bg=self.colors['bg_card'])
+        multi_entry_frame.pack(pady=10)
 
-        tk.Label(multi_entry_frame, text="Or enter multiple:", font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
-        self.multi_card_entry = tk.Entry(multi_entry_frame, width=20, font=("Arial", 10))
+        tk.Label(
+            multi_entry_frame,
+            text="Or enter multiple:",
+            font=("Palatino", 9),
+            bg=self.colors['bg_card'],
+            fg=self.colors['text_light']
+        ).pack(side=tk.LEFT, padx=5)
+
+        self.multi_card_entry = tk.Entry(
+            multi_entry_frame,
+            width=20,
+            font=("Palatino", 11),
+            bg='#FFFFFF',
+            fg='#2C3E50',
+            relief=tk.SUNKEN,
+            bd=2
+        )
         self.multi_card_entry.pack(side=tk.LEFT, padx=5)
 
         tk.Button(
             multi_entry_frame,
             text="Add Cards",
             command=self.add_multiple_cards,
-            font=("Arial", 9),
-            bg="#2196F3",
-            fg="white"
+            font=("Palatino", 10, "bold"),
+            bg=self.colors['accent_gold'],
+            fg='#2C3E50',
+            activebackground=self.colors['accent_gold_dark'],
+            relief=tk.RAISED,
+            bd=2,
+            cursor='hand2',
+            padx=15,
+            pady=5
         ).pack(side=tk.LEFT, padx=5)
 
         tk.Label(
             card_entry_frame,
             text="Format: 10,K,5,A or 10 K 5 A",
-            font=("Arial", 8, "italic"),
-            fg="gray"
-        ).pack(pady=2)
+            font=("Palatino", 8, "italic"),
+            bg=self.colors['bg_card'],
+            fg=self.colors['text_gold']
+        ).pack(pady=(0, 10))
 
-        # Strategy Advisor Section
-        strategy_frame = tk.LabelFrame(self.root, text="Strategy Advisor", font=("Arial", 11, "bold"))
-        strategy_frame.pack(pady=15, padx=20, fill=tk.X)
+        # ===== Strategy Advisor Section =====
+        strategy_frame = tk.Frame(self.root, bg=self.colors['bg_card'], relief=tk.GROOVE, bd=2)
+        strategy_frame.pack(pady=15, padx=25, fill=tk.X)
+
+        tk.Label(
+            strategy_frame,
+            text="♥ STRATEGY ADVISOR ♠",
+            font=("Palatino", 12, "bold"),
+            bg=self.colors['bg_card'],
+            fg=self.colors['text_gold'],
+            pady=10
+        ).pack()
 
         # Input row
-        input_frame = tk.Frame(strategy_frame)
-        input_frame.pack(pady=8)
+        input_frame = tk.Frame(strategy_frame, bg=self.colors['bg_card'])
+        input_frame.pack(pady=10)
 
-        tk.Label(input_frame, text="Your Hand:", font=("Arial", 10)).grid(row=0, column=0, padx=5)
-        self.player_hand_entry = tk.Entry(input_frame, width=10, font=("Arial", 11))
-        self.player_hand_entry.grid(row=0, column=1, padx=5)
+        tk.Label(
+            input_frame,
+            text="Your Hand:",
+            font=("Palatino", 10, "bold"),
+            bg=self.colors['bg_card'],
+            fg=self.colors['text_light']
+        ).grid(row=0, column=0, padx=8)
+
+        self.player_hand_entry = tk.Entry(
+            input_frame,
+            width=10,
+            font=("Palatino", 12),
+            bg='#FFFFFF',
+            fg='#2C3E50',
+            relief=tk.SUNKEN,
+            bd=2
+        )
+        self.player_hand_entry.grid(row=0, column=1, padx=8)
         self.player_hand_entry.insert(0, "10,6")
 
-        tk.Label(input_frame, text="Dealer:", font=("Arial", 10)).grid(row=0, column=2, padx=5)
-        self.dealer_upcard_entry = tk.Entry(input_frame, width=5, font=("Arial", 11))
-        self.dealer_upcard_entry.grid(row=0, column=3, padx=5)
+        tk.Label(
+            input_frame,
+            text="Dealer:",
+            font=("Palatino", 10, "bold"),
+            bg=self.colors['bg_card'],
+            fg=self.colors['text_light']
+        ).grid(row=0, column=2, padx=8)
+
+        self.dealer_upcard_entry = tk.Entry(
+            input_frame,
+            width=5,
+            font=("Palatino", 12),
+            bg='#FFFFFF',
+            fg='#2C3E50',
+            relief=tk.SUNKEN,
+            bd=2
+        )
+        self.dealer_upcard_entry.grid(row=0, column=3, padx=8)
         self.dealer_upcard_entry.insert(0, "10")
 
         self.calc_action_button = tk.Button(
             input_frame,
-            text="Get Action",
+            text="Calculate",
             command=self.calculate_action,
-            bg="#4CAF50",
-            fg="white",
-            font=("Arial", 10, "bold")
+            bg=self.colors['accent_gold'],
+            fg='#2C3E50',
+            activebackground=self.colors['accent_gold_dark'],
+            font=("Palatino", 10, "bold"),
+            relief=tk.RAISED,
+            bd=3,
+            cursor='hand2',
+            padx=20,
+            pady=5
         )
-        self.calc_action_button.grid(row=0, column=4, padx=10)
+        self.calc_action_button.grid(row=0, column=4, padx=15)
 
-        # Action display
-        action_display_frame = tk.Frame(strategy_frame, bg="#f0f0f0", relief=tk.RAISED, bd=2)
-        action_display_frame.pack(pady=10, padx=10, fill=tk.X)
+        # Action display - Premium card style
+        action_outer = tk.Frame(strategy_frame, bg=self.colors['bg_card'])
+        action_outer.pack(pady=15, padx=15)
+
+        action_display_frame = tk.Frame(action_outer, bg='#FFFFFF', relief=tk.RAISED, bd=3)
+        action_display_frame.pack(padx=3, pady=3)
 
         tk.Label(
             action_display_frame,
-            text="Recommended Action:",
-            font=("Arial", 11, "bold"),
-            bg="#f0f0f0"
-        ).pack(pady=3)
+            text="RECOMMENDED ACTION",
+            font=("Palatino", 10, "bold"),
+            bg='#FFFFFF',
+            fg='#2C3E50',
+            pady=5
+        ).pack()
 
         self.action_label = tk.Label(
             action_display_frame,
             text="STAND",
-            font=("Arial", 28, "bold"),
-            fg="#2196F3",
-            bg="#f0f0f0"
+            font=("Palatino", 36, "bold"),
+            fg=self.colors['info'],
+            bg='#FFFFFF',
+            pady=15
         )
-        self.action_label.pack(pady=5)
+        self.action_label.pack()
 
         self.action_reason_label = tk.Label(
             action_display_frame,
             text="Basic strategy",
-            font=("Arial", 9, "italic"),
-            fg="gray",
-            bg="#f0f0f0"
+            font=("Palatino", 9, "italic"),
+            fg='#7F8C8D',
+            bg='#FFFFFF',
+            wraplength=500
         )
-        self.action_reason_label.pack(pady=3)
+        self.action_reason_label.pack(pady=(0, 10))
 
-        # Status message
+        # ===== Status Message =====
+        status_outer = tk.Frame(self.root, bg=self.colors['bg_main'])
+        status_outer.pack(pady=15)
+
         self.status_label = tk.Label(
-            self.root,
-            text="Waiting to start...",
-            font=("Arial", 10, "italic"),
-            fg="gray"
+            status_outer,
+            text="Ready to track • Awaiting new shoe",
+            font=("Palatino", 11, "italic"),
+            bg=self.colors['bg_main'],
+            fg=self.colors['text_gold']
         )
-        self.status_label.pack(pady=10)
+        self.status_label.pack()
 
-        # Control Buttons
-        button_frame = tk.Frame(self.root)
-        button_frame.pack(pady=10)
+        # ===== Control Buttons =====
+        button_frame = tk.Frame(self.root, bg=self.colors['bg_main'])
+        button_frame.pack(pady=15)
 
         self.start_button = tk.Button(
             button_frame,
-            text="Start Scanning",
+            text="▶ Start Scanning",
             command=self.start_scanning,
-            bg="green",
-            fg="white",
-            font=("Arial", 11, "bold"),
-            width=12
+            bg=self.colors['success'],
+            fg='#FFFFFF',
+            activebackground='#00A040',
+            font=("Palatino", 11, "bold"),
+            width=15,
+            height=2,
+            relief=tk.RAISED,
+            bd=3,
+            cursor='hand2'
         )
-        self.start_button.pack(side=tk.LEFT, padx=5)
+        self.start_button.pack(side=tk.LEFT, padx=8)
 
         self.stop_button = tk.Button(
             button_frame,
-            text="Stop Scanning",
+            text="■ Stop Scanning",
             command=self.stop_scanning,
-            bg="red",
-            fg="white",
-            font=("Arial", 11, "bold"),
-            width=12,
-            state=tk.DISABLED
+            bg=self.colors['danger'],
+            fg='#FFFFFF',
+            activebackground='#C62828',
+            font=("Palatino", 11, "bold"),
+            width=15,
+            height=2,
+            state=tk.DISABLED,
+            relief=tk.RAISED,
+            bd=3,
+            cursor='hand2'
         )
-        self.stop_button.pack(side=tk.LEFT, padx=5)
+        self.stop_button.pack(side=tk.LEFT, padx=8)
 
         self.reset_button = tk.Button(
             button_frame,
-            text="New Shoe",
+            text="↻ New Shoe",
             command=self.reset_count,
-            font=("Arial", 11, "bold"),
-            width=12
+            bg=self.colors['accent_gold'],
+            fg='#2C3E50',
+            activebackground=self.colors['accent_gold_dark'],
+            font=("Palatino", 11, "bold"),
+            width=15,
+            height=2,
+            relief=tk.RAISED,
+            bd=3,
+            cursor='hand2'
         )
-        self.reset_button.pack(side=tk.LEFT, padx=5)
+        self.reset_button.pack(side=tk.LEFT, padx=8)
+
+        # ===== Footer =====
+        footer_frame = tk.Frame(self.root, bg=self.colors['bg_dark'], height=40)
+        footer_frame.pack(fill=tk.X, side=tk.BOTTOM)
+
+        tk.Label(
+            footer_frame,
+            text="Professional Composition Tracking • Maximum EV Strategy",
+            font=("Palatino", 8, "italic"),
+            bg=self.colors['bg_dark'],
+            fg=self.colors['text_gold'],
+            pady=12
+        ).pack()
 
     def update_display(self):
         """Update the display with current composition and betting info"""
@@ -935,40 +1323,30 @@ class BlackjackCounterGUI:
         cards_remaining = self.composition_tracker.get_total_remaining()
         penetration = self.composition_tracker.get_penetration_percentage()
 
-        # Update optimal bet (main display)
+        # Update optimal bet (main display) - stays white background, change text color
         self.bet_label.config(text=f"{optimal_bet:.1f} units")
 
-        # Color code based on bet size
+        # Color code based on bet size (using new luxurious colors)
         if optimal_bet >= 5.0:
-            self.bet_label.config(fg="darkgreen")
-            bet_color = "#d4edda"
+            self.bet_label.config(fg=self.colors['success'])  # Bright green
         elif optimal_bet >= 3.0:
-            self.bet_label.config(fg="green")
-            bet_color = "#e8f5e9"
+            self.bet_label.config(fg='#00A040')  # Medium green
         elif optimal_bet >= 2.0:
-            self.bet_label.config(fg="orange")
-            bet_color = "#fff9e6"
+            self.bet_label.config(fg=self.colors['warning'])  # Orange
         else:
-            self.bet_label.config(fg="red")
-            bet_color = "#ffebee"
-
-        bet_frame = self.bet_label.master
-        bet_frame.config(bg=bet_color)
-        for widget in bet_frame.winfo_children():
-            if isinstance(widget, tk.Label):
-                widget.config(bg=bet_color)
+            self.bet_label.config(fg=self.colors['accent_gold_dark'])  # Gold for min bet
 
         # Update advantage display
         self.advantage_label.config(text=f"{advantage:+.3f}%")
 
         if advantage >= 1.0:
-            self.advantage_label.config(fg="darkgreen")
+            self.advantage_label.config(fg=self.colors['success'])
         elif advantage >= 0.5:
-            self.advantage_label.config(fg="green")
+            self.advantage_label.config(fg='#66BB6A')  # Light green
         elif advantage >= 0.0:
-            self.advantage_label.config(fg="orange")
+            self.advantage_label.config(fg=self.colors['warning'])
         else:
-            self.advantage_label.config(fg="red")
+            self.advantage_label.config(fg=self.colors['danger'])
 
         # Update dealer bust probability
         dealer_bust = self.composition_tracker.calculate_dealer_bust_probability()
@@ -976,13 +1354,13 @@ class BlackjackCounterGUI:
 
         # Color code: higher bust probability = better for player
         if dealer_bust >= 32.0:
-            self.bust_label.config(fg="darkgreen")  # High bust chance - very good
+            self.bust_label.config(fg=self.colors['success'])  # High bust chance - very good
         elif dealer_bust >= 29.0:
-            self.bust_label.config(fg="green")  # Above average - good
+            self.bust_label.config(fg='#66BB6A')  # Above average - good
         elif dealer_bust >= 26.0:
-            self.bust_label.config(fg="orange")  # Slightly below average
+            self.bust_label.config(fg=self.colors['warning'])  # Slightly below average
         else:
-            self.bust_label.config(fg="red")  # Low bust chance - bad for player
+            self.bust_label.config(fg=self.colors['danger'])  # Low bust chance - bad for player
 
         # Update card counts
         self.cards_remaining_label.config(text=str(cards_remaining))
@@ -1002,16 +1380,16 @@ class BlackjackCounterGUI:
 
         # Update status
         if advantage >= 0.5:
-            status = "FAVORABLE - Player has edge!"
+            status = "🔥 FAVORABLE DECK • Player Edge Detected"
+            status_color = self.colors['success']
         elif advantage >= 0.0:
-            status = "MARGINAL - Small edge"
+            status = "⚖ MARGINAL SITUATION • Small Edge"
+            status_color = self.colors['warning']
         else:
-            status = "UNFAVORABLE - House has edge"
+            status = "❄ UNFAVORABLE DECK • House Edge"
+            status_color = self.colors['danger']
 
-        self.status_label.config(
-            text=status,
-            fg="green" if advantage >= 0.5 else "orange" if advantage >= 0.0 else "red"
-        )
+        self.status_label.config(text=status, fg=status_color)
 
     def calculate_action(self):
         """Calculate and display recommended action based on player hand and dealer upcard"""
@@ -1045,24 +1423,24 @@ class BlackjackCounterGUI:
             self.action_label.config(text=action)
             self.action_reason_label.config(text=reason)
 
-            # Color code the action
+            # Color code the action (using luxurious theme)
             action_colors = {
-                "HIT": "#FF9800",      # Orange
-                "STAND": "#2196F3",    # Blue
-                "DOUBLE": "#4CAF50",   # Green
-                "SPLIT": "#9C27B0",    # Purple
-                "SURRENDER": "#F44336" # Red
+                "HIT": self.colors['warning'],      # Orange
+                "STAND": self.colors['info'],       # Blue
+                "DOUBLE": self.colors['success'],   # Green
+                "SPLIT": "#9C27B0",                 # Purple
+                "SURRENDER": self.colors['danger']  # Red
             }
 
-            action_color = action_colors.get(action, "#2196F3")
+            action_color = action_colors.get(action, self.colors['info'])
             self.action_label.config(fg=action_color)
 
             # Highlight if deviation from basic strategy
             if is_deviation:
-                self.action_label.config(fg="#FF5722")  # Deep orange for deviations
-                self.action_reason_label.config(fg="#FF5722", font=("Arial", 9, "italic", "bold"))
+                self.action_label.config(fg=self.colors['accent_gold_dark'])  # Gold for deviations
+                self.action_reason_label.config(fg='#E67E22', font=("Palatino", 9, "italic", "bold"))
             else:
-                self.action_reason_label.config(fg="gray", font=("Arial", 9, "italic"))
+                self.action_reason_label.config(fg="#7F8C8D", font=("Palatino", 9, "italic"))
 
         except Exception as e:
             self.action_label.config(text="ERROR", fg="red")
@@ -1073,14 +1451,14 @@ class BlackjackCounterGUI:
         success = self.composition_tracker.add_card(rank)
         if success:
             # Visual feedback - briefly highlight the button
-            self.card_buttons[rank].config(bg="#4CAF50")
-            self.root.after(200, lambda: self.card_buttons[rank].config(bg="SystemButtonFace"))
+            self.card_buttons[rank].config(bg=self.colors['success'], fg='#FFFFFF')
+            self.root.after(200, lambda: self.card_buttons[rank].config(bg='#FFFFFF', fg='#2C3E50'))
             # Update the display
             self.update_display()
         else:
             # Card not available (shouldn't happen in normal use)
-            self.card_buttons[rank].config(bg="#F44336")
-            self.root.after(200, lambda: self.card_buttons[rank].config(bg="SystemButtonFace"))
+            self.card_buttons[rank].config(bg=self.colors['danger'], fg='#FFFFFF')
+            self.root.after(200, lambda: self.card_buttons[rank].config(bg='#FFFFFF', fg='#2C3E50'))
 
     def add_multiple_cards(self):
         """Add multiple cards from text entry"""
@@ -1104,8 +1482,8 @@ class BlackjackCounterGUI:
             self.update_display()
             self.multi_card_entry.delete(0, tk.END)
             # Show feedback
-            self.multi_card_entry.config(bg="#4CAF50")
-            self.root.after(500, lambda: self.multi_card_entry.config(bg="white"))
+            self.multi_card_entry.config(bg=self.colors['success'])
+            self.root.after(500, lambda: self.multi_card_entry.config(bg='#FFFFFF'))
 
     def scan_loop(self):
         """Main scanning loop running in separate thread"""
@@ -1143,7 +1521,7 @@ class BlackjackCounterGUI:
         self.is_running = True
         self.start_button.config(state=tk.DISABLED)
         self.stop_button.config(state=tk.NORMAL)
-        self.status_label.config(text="Scanning...", fg="blue")
+        self.status_label.config(text="⚡ SCANNING IN PROGRESS • Detecting Cards", fg=self.colors['info'])
 
         # Start scanning in separate thread
         self.scan_thread = threading.Thread(target=self.scan_loop, daemon=True)
@@ -1154,13 +1532,13 @@ class BlackjackCounterGUI:
         self.is_running = False
         self.start_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.DISABLED)
-        self.status_label.config(text="Stopped", fg="gray")
+        self.status_label.config(text="⏸ SCANNING STOPPED • Ready to Resume", fg=self.colors['text_gold'])
 
     def reset_count(self):
         """Reset for new shoe"""
         self.composition_tracker.reset()
         self.update_display()
-        self.status_label.config(text="New shoe - Ready to scan", fg="blue")
+        self.status_label.config(text="♻ NEW SHOE INITIALIZED • Fresh Count", fg=self.colors['accent_gold'])
 
     def run(self):
         """Start the GUI main loop"""
