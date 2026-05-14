@@ -1,218 +1,133 @@
 # Blackjack Card Scanner and Counter
 
-A Linux application that performs real-time screen analysis to detect playing cards and calculate optimal bet sizing for blackjack games using full deck composition tracking.
+A Linux application that performs real-time screen analysis to detect playing cards and calculate bet sizing for blackjack using full deck composition tracking.
 
-## Overview
+The software monitors a region of the screen, detects cards as they appear, and reports counting metrics: strategy advice (Hit/Stand/Double/Split/Surrender) with composition-dependent deviations, Kelly-based bet size in units, player advantage from exact deck composition, dealer bust probability, full composition tracking across all 13 ranks, and shoe penetration.
 
-This software monitors your screen in real-time, detects blackjack cards being played, and provides precise card counting metrics including:
-- **Strategy Advisor**: Tells you the optimal action (Hit/Stand/Double/Split/Surrender) with composition-dependent deviations
-- **Optimal Bet Size**: Exact bet amount in units using Kelly Criterion
-- **Player Advantage**: Calculated edge based on exact deck composition
-- **Dealer Bust Probability**: Real-time chance of dealer busting based on composition
-- **Full Composition Tracking**: Monitors every single card remaining in the shoe
-- **Shoe Penetration**: Percentage of cards dealt from the shoe
-
-## Features
-
-- 🎴 Real-time card detection using computer vision (OpenCV)
-- 🎯 **Strategy Advisor**: Basic strategy + composition-dependent deviations
-- 🧮 Full deck composition tracking (not simplified counting systems)
-- 📊 Exact player advantage calculation using Effect of Removal (EOR)
-- 💰 Kelly Criterion optimal bet sizing in units
-- 🎲 Dealer bust probability based on current composition
-- 🖥️ Always-on-top GUI display
-- 📈 Key card composition display (5s, 6s, 10s, Aces)
-- 🃏 Optimized for 8-deck shoes with ~50% penetration
-- 🔄 Easy reset between shoes
-- ⚡ Low CPU usage and efficient screen capture
-
-## Quick Start
-
-### Installation
+## Install
 
 ```bash
-# Run the setup script
 chmod +x setup.sh
 ./setup.sh
 ```
 
-### Usage
+## Run
 
 ```bash
-# Launch the application
 python3 blackjack_counter.py
 ```
 
-1. Open your online blackjack game (optimized for 8-deck shoes)
-2. Click "Start Scanning" in the counter window
-3. Play as normal - the count updates automatically
-4. Click "New Shoe" when a new shoe begins
+The counter window stays on top. Click "Start Scanning" to begin analysis, and "New Shoe" to reset state when a new shoe starts. The default configuration assumes an 8-deck shoe.
 
-## System Requirements
+## Requirements
 
-- Linux (X11 display server)
+- Linux with X11
 - Python 3.7+
 - pip3
 
-## Documentation
+## Additional documentation
 
-- [Installation Guide](INSTALL.md) - Detailed setup instructions
-- [Usage Guide](USAGE.md) - How to use the application effectively
+- `INSTALL.md` - setup details
+- `USAGE.md` - operating notes
 
-## How It Works
+## Full deck composition tracking
 
-### Full Deck Composition Tracking
+Rather than a reduced count like Hi-Lo or KO, the application tracks the exact count of every rank (2 through A) remaining in the shoe. Player advantage is computed from Effect of Removal (EOR) values, where each rank contributes a fixed delta to player edge per card removed. The defaults target 8-deck shoes (416 cards) with ~50% penetration (208 cards dealt before shuffle), which is typical for many online tables.
 
-Unlike simplified counting systems (Hi-Lo, KO, etc.), this application tracks the **exact composition** of every card remaining in the shoe:
+## Effect of Removal
 
-- Maintains count of all 13 ranks (2-A) across all decks
-- Calculates player advantage using Effect of Removal (EOR) values
-- Each card rank has a specific impact on player edge
-- More accurate than traditional counting systems
-
-**Configuration**: Optimized for 8-deck shoes (416 cards total), the standard for most online casinos. Online casinos typically use ~50% penetration (208 cards dealt before shuffle), which provides sufficient data for accurate advantage calculation while limiting counter effectiveness.
-
-### Effect of Removal (EOR)
-
-The system uses EOR values to determine how each card affects player advantage:
+EOR values used by the advantage calculation:
 
 | Card | EOR Impact |
 |------|------------|
-| 5 | +0.67% (most beneficial to remove) |
+| 5 | +0.67% |
 | 4 | +0.52% |
 | 6 | +0.45% |
-| 2, 3 | +0.40-0.43% |
+| 2, 3 | +0.40 to +0.43% |
 | 7 | +0.30% |
-| 8 | ±0.01% (neutral) |
+| 8 | ±0.01% |
 | 9 | -0.19% |
-| 10, J, Q, K | -0.51% (hurts when removed) |
-| A | -0.59% (most harmful to remove) |
+| 10, J, Q, K | -0.51% |
+| A | -0.59% |
 
-### Kelly Criterion Bet Sizing
+## Kelly Criterion bet sizing
 
-Optimal bet = (Player Edge / Variance) × Bankroll
+Bet size is computed as `(player_edge / variance) * bankroll`. The implementation uses 1/4 Kelly to dampen variance, expresses bet size in units, and caps any single bet at 10% of bankroll.
 
-- Uses 1/4 Kelly for conservative risk management
-- Automatically calculates bet size in units
-- Considers current advantage and bankroll
-- Maximum bet capped at 10% of total bankroll
+## Dealer bust probability
 
-### Dealer Bust Probability
+The dealer bust probability is computed from the current composition. Base rates per upcard under S17 are:
 
-The system calculates the real-time probability of the dealer busting based on current deck composition:
+- Upcard 5 or 6: ~42%
+- Upcard 2-4: ~35-40%
+- Upcard 7-9: ~23-26%
+- Upcard 10: ~21%
+- Upcard A: ~12%
 
-**How it works**:
-- Starts with base bust probabilities for each possible dealer upcard
-- Adjusts based on remaining high cards (10s, face cards) and low cards (2-6)
-- More 10-value cards remaining = higher dealer bust probability (good for player)
-- More low cards remaining = lower dealer bust probability (bad for player)
+The displayed value is a weighted average over possible upcards, adjusted by the remaining counts of high cards (10-value) and low cards (2-6). A shoe rich in 10s raises the value; a shoe rich in low cards lowers it.
 
-**Base dealer bust rates** (neutral deck, S17 rules):
-- Dealer showing 5 or 6: ~42% (worst for dealer)
-- Dealer showing 2-4: ~35-40%
-- Dealer showing 7-9: ~23-26%
-- Dealer showing 10: ~21%
-- Dealer showing Ace: ~12%
+## Strategy advisor
 
-The displayed bust probability is a weighted average across all possible dealer upcards, adjusted for the current composition. When the deck is rich in 10s, this percentage increases significantly.
+For each decision, the engine computes Expected Value for each legal action against the current composition:
 
-### Strategy Advisor
+1. **EV(Stand)**: probability-weighted comparison of player total against dealer outcomes, using dealer-outcome distributions derived from the remaining cards.
+2. **EV(Hit)**: sum over each remaining rank of `P(draw rank) * EV(resulting hand)`, where the resulting hand is evaluated by the same machinery (typically reducing to a stand EV after the draw).
+3. **EV(Double)**: 2 * EV of a single drawn card with no further action.
+4. The action with the maximum EV is returned.
 
-The application includes a **true composition-dependent strategy engine** that calculates the mathematically optimal play for every situation using exact deck composition:
+Basic strategy is derived from an infinite-deck assumption. Because this engine recomputes from the actual remaining cards, it produces composition-dependent deviations automatically. Examples:
 
-**Core Algorithm**:
-The strategy engine calculates **Expected Value (EV)** for each possible action based on the exact remaining cards:
+| Situation | Basic Strategy | Composition-Dependent Result |
+|-----------|----------------|------------------------------|
+| 16 vs 10 | Hit/Surrender | Stand when many small cards are gone |
+| 12 vs 2 | Hit | Stand when shoe is rich in 10s |
+| 10 vs 10 | Hit | Double when shoe is very rich in 10s |
+| 9 vs 2 | Hit | Double when composition supports it |
 
-1. **EV(Stand)**: Probability-weighted outcomes vs. dealer
-   - Calculates dealer bust probability from composition
-   - Models dealer outcomes (17-21) based on remaining cards
-   - Compares player total vs. all dealer outcomes
+To use it: enter your hand (e.g. `10,6` or `A,5`), enter the dealer upcard (e.g. `10` or `A`), and click "Get Action". Deviations from basic strategy are highlighted and the underlying EVs are shown, e.g. `Stand EV=0.156 > Hit EV=0.142 (Edge: +0.8%)`.
 
-2. **EV(Hit)**: Expected value of drawing one card
-   - Considers probability of drawing each remaining rank
-   - Calculates new hand total for each possible draw
-   - Evaluates stand EV after drawing
+## Stack
 
-3. **EV(Double)**: Expected value of doubling down
-   - Draw exactly one card, bet is doubled
-   - 2× the EV of single-card outcome
+- OpenCV for card detection
+- mss for screen capture
+- NumPy
+- Tkinter for the GUI
+- Python threading for non-blocking capture
 
-4. **Choose Maximum EV**: Selects action with highest expected value
+## Legal and ethical notes
 
-**Why This Is Superior to Basic Strategy**:
-- **Basic strategy** uses fixed rules based on infinite deck assumption
-- **This system** uses exact probabilities from current remaining cards
-- Automatically finds profitable deviations when composition creates opportunities
-- Maximizes EV on every single decision
+Card counting performed mentally is legal in most jurisdictions, but casinos may refuse service to known counters, and use of electronic aids may violate house rules or local law. This code is intended for educational use and analysis of recorded play. Users are responsible for complying with applicable law and the terms of any platform they interact with.
 
-**Example Composition-Dependent Plays**:
+## Status
 
-| Situation | Basic Strategy | Composition-Dependent Strategy |
-|-----------|----------------|-------------------------------|
-| 16 vs 10 | Hit/Surrender | **STAND** when many small cards removed (Stand EV > Hit EV) |
-| 12 vs 2 | Hit | **STAND** when deck rich in 10s (bust probability too high) |
-| 10 vs 10 | Hit | **DOUBLE** when deck very rich in 10s (Double EV > Hit EV) |
-| 9 vs 2 | Hit | **DOUBLE** when composition favors it |
+Implemented:
 
-The system automatically detects these situations by calculating exact EVs!
+- Screen capture and monitoring
+- Full composition tracking across all 13 ranks
+- Strategy advisor with composition-dependent deviations
+- Player advantage via EOR
+- Kelly Criterion bet sizing
+- Composition-adjusted dealer bust probability
+- GUI with live updates and bet-in-units display
+- Key card composition display (5s, 6s, 10s, Aces)
 
-**How to use**:
-1. Enter your hand (e.g., "10,6" or "A,5")
-2. Enter dealer's upcard (e.g., "10" or "A")
-3. Click "Get Action"
-4. The app shows the optimal play with EV analysis
-
-Composition-dependent deviations are highlighted in **deep orange** and show EV calculations:
-- Example: "Composition analysis: Stand EV=0.156 > Hit EV=0.142 (Edge: +0.8%)"
-
-### Technology Stack
-
-- **OpenCV**: Computer vision for card detection
-- **mss**: Efficient cross-platform screen capture
-- **NumPy**: Numerical computations
-- **Tkinter**: GUI interface
-- **Python Threading**: Non-blocking screen analysis
-
-## Legal & Ethical Notice
-
-**Important**:
-- Card counting is a legal strategy in most jurisdictions when done mentally
-- Casinos may refuse service to known card counters
-- Use of electronic devices for counting may be prohibited by casino terms
-- This software is intended for **educational purposes** only
-- Users are responsible for compliance with local laws and casino policies
-- Always gamble responsibly
-
-## Current Status
-
-This is a functional implementation with the following capabilities:
-
-✅ Screen capture and monitoring
-✅ Full deck composition tracking (all 13 ranks)
-✅ **Strategy Advisor with composition-dependent deviations**
-✅ Exact player advantage calculation using EOR
-✅ Kelly Criterion optimal bet sizing
-✅ Dealer bust probability (composition-adjusted)
-✅ GUI with live updates showing bet in units
-✅ Key card composition display
-
-⚠️ **Note**: Card detection accuracy depends on screen quality, card visibility, and casino interface. The current implementation uses contour detection - for production use, consider implementing template matching or machine learning models for your specific casino.
+The current card detector uses contour detection, which is sensitive to screen quality and the table interface in use. For more robust detection, swap in template matching or a trained model tuned to your target interface.
 
 ## Contributing
 
-Contributions are welcome! Areas for improvement:
-- Enhanced card detection with ML models or OCR
-- Template matching for specific online casinos
-- Multi-monitor support configuration
-- Region selection for targeted scanning
-- Adjustable Kelly fraction and risk parameters
-- Export statistics and session tracking
-- Support for different rule variations (S17, H17, DAS, etc.)
+Useful directions:
+
+- Better card detection (template matching, ML, OCR)
+- Per-interface templates
+- Multi-monitor and region-of-interest selection
+- Configurable Kelly fraction and risk caps
+- Session export and statistics
+- Rule variants (S17, H17, DAS, etc.)
 
 ## License
 
-This project is provided for educational purposes. Users must comply with all applicable laws and regulations.
+Provided for educational purposes. Users must comply with applicable law.
 
 ## Disclaimer
 
-This software is provided "as is" without warranty of any kind. The authors are not responsible for any losses incurred through use of this software. Gambling involves risk - never bet more than you can afford to lose.
+Provided "as is" without warranty. The authors are not responsible for any losses incurred. Gambling involves risk; do not bet more than you can afford to lose.
